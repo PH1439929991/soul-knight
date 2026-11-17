@@ -346,15 +346,15 @@ function inside(p, r) {
 const BOSS_TIME = 120;
 const KILL_QUOTA = 90;
 const MAPS = [
-  { id: 'forest',  name: '森林',     ground: '#eef3d9', grain: '#cdd8ae', doodle: '#9fbf7a', boss: '荆棘女王' },
-  { id: 'waste',   name: '荒漠',     ground: '#f3e8c9', grain: '#d9c396', doodle: '#c9a86a', boss: '沙虫' },
-  { id: 'desert',  name: '沙漠',     ground: '#f7e6b8', grain: '#e2cd8e', doodle: '#d8a84a', boss: '蝎王' },
-  { id: 'swamp',   name: '沼泽',     ground: '#dde8c8', grain: '#b8cf9a', doodle: '#7fa05e', boss: '沼泽巨蛙' },
-  { id: 'ocean',   name: '海洋',     ground: '#dfeef3', grain: '#bcd8e2', doodle: '#7fb4c9', boss: '深海章鱼' },
-  { id: 'volcano', name: '火山',     ground: '#f0dcc8', grain: '#d9b393', doodle: '#c9774a', boss: '熔岩巨像' },
-  { id: 'inferno', name: '炼狱',     ground: '#e9d2d2', grain: '#c99aa0', doodle: '#b04a5a', boss: '炼狱魔王' },
-  { id: 'heaven',  name: '天宫',     ground: '#e8eef6', grain: '#c5d4e6', doodle: '#8fa8cc', boss: '天将' },
-  { id: 'four',    name: '风林火山', ground: '#efe8d9', grain: '#d5c9ae', doodle: '#b0925c', boss: '四象之灵' },
+  { id: 'forest',  name: '森林',     ground: '#eef3d9', grain: '#cdd8ae', doodle: '#7fa050', boss: '刻耳柏洛斯',   mech: 'bush',    interval: 0,  mechDesc: '灌木丛减速怪物' },
+  { id: 'waste',   name: '荒漠',     ground: '#f3e8c9', grain: '#d9c396', doodle: '#b8914e', boss: '弥诺陶洛斯',   mech: 'tumble',  interval: 5,  mechDesc: '风滚草滚过战场' },
+  { id: 'desert',  name: '沙漠',     ground: '#f7e6b8', grain: '#e2cd8e', doodle: '#c99a30', boss: '斯芬克斯',     mech: 'zone',    interval: 7,  mechDesc: '烈日灼烧圈' },
+  { id: 'swamp',   name: '沼泽',     ground: '#dde8c8', grain: '#b8cf9a', doodle: '#5f8040', boss: '海德拉',       mech: 'mire',    interval: 0,  mechDesc: '泥潭减速怪物' },
+  { id: 'ocean',   name: '海洋',     ground: '#dfeef3', grain: '#bcd8e2', doodle: '#5f9ab0', boss: '斯库拉',       mech: 'tide',    interval: 6,  mechDesc: '浪潮横扫' },
+  { id: 'volcano', name: '火山',     ground: '#f0dcc8', grain: '#d9b393', doodle: '#b5562e', boss: '提丰',         mech: 'zone',    interval: 5,  mechDesc: '熔岩喷发' },
+  { id: 'inferno', name: '炼狱',     ground: '#e9d2d2', grain: '#c99aa0', doodle: '#9a3040', boss: '厄喀德那',     mech: 'rain',    interval: 5,  mechDesc: '火雨' },
+  { id: 'heaven',  name: '天宫',     ground: '#e8eef6', grain: '#c5d4e6', doodle: '#6f8fc0', boss: '库克罗普斯',   mech: 'bolt',    interval: 6,  mechDesc: '天雷劈怪' },
+  { id: 'four',    name: '风林火山', ground: '#efe8d9', grain: '#d5c9ae', doodle: '#9a7a44', boss: '卡俄斯',       mech: 'four',    interval: 10, mechDesc: '四象轮转' },
 ];
 
 let state = 'menu';
@@ -363,6 +363,11 @@ let levelIdx = 0;
 let currentMap = MAPS[0];
 let levelClear = false;
 let clearT = 0;
+let hazards = [];
+let fields = [];
+let mechT = 0;
+let fourPhase = 0;
+let fourT = 0;
 let time = 0;
 let kills = 0;
 let camera = { x: 0, y: 0 };
@@ -502,8 +507,134 @@ function startLevel() {
   camera.x = clamp(player.x - VW / 2, 0, WORLD.w - VW);
   camera.y = clamp(player.y - VH / 2, 0, WORLD.h - VH);
 
+  hazards = [];
+  fields = [];
+  mechT = 2.0;
+  fourPhase = 0;
+  fourT = 0;
+  initFields();
+
   state = 'play';
   for (let i = 0; i < 4; i++) spawnEnemy('slime');
+}
+
+// ---------------- 地图机制 ----------------
+function initFields() {
+  if (currentMap.mech === 'bush') {
+    for (let i = 0; i < 11; i++) {
+      const a = rnd(0, TAU);
+      const d = rnd(130, 400);
+      fields.push({ kind: 'bush', x: clamp(player.x + Math.cos(a) * d, 50, WORLD.w - 50), y: clamp(player.y + Math.sin(a) * d, 50, WORLD.h - 50), r: 26, slow: 0.4, color: currentMap.doodle });
+    }
+  } else if (currentMap.mech === 'mire') {
+    for (let i = 0; i < 7; i++) {
+      const a = rnd(0, TAU);
+      const d = rnd(130, 400);
+      fields.push({ kind: 'mire', x: clamp(player.x + Math.cos(a) * d, 50, WORLD.w - 50), y: clamp(player.y + Math.sin(a) * d, 50, WORLD.h - 50), r: 38, slow: 0.45, color: currentMap.doodle });
+    }
+  }
+}
+
+function spawnMechanic() {
+  const m = currentMap;
+  const near = () => {
+    const a = rnd(0, TAU);
+    const d = rnd(50, 140);
+    return {
+      x: clamp(player.x + Math.cos(a) * d, 40, WORLD.w - 40),
+      y: clamp(player.y + Math.sin(a) * d, 40, WORLD.h - 40),
+    };
+  };
+  if (m.mech === 'zone') {
+    for (let i = 0; i < 2; i++) {
+      const pt = near();
+      hazards.push({ kind: 'zone', x: pt.x, y: pt.y, r: 46, t: 0, delay: 1.2, dmgE: 45, dmgP: 15, color: m.doodle });
+    }
+  } else if (m.mech === 'rain') {
+    for (let i = 0; i < 4; i++) {
+      const pt = near();
+      hazards.push({ kind: 'zone', x: pt.x, y: pt.y, r: 30, t: 0, delay: 0.9, dmgE: 35, dmgP: 8, color: m.doodle });
+    }
+  } else if (m.mech === 'bolt') {
+    const targets = enemies.filter((e) => !e.dead && !e.boss).sort((a, b) => dist(player, a) - dist(player, b)).slice(0, 3);
+    if (targets.length) {
+      for (const e of targets) hazards.push({ kind: 'bolt', x: e.x, y: e.y, r: 24, t: 0, delay: 0.45, dmgE: 90, dmgP: 10, color: m.doodle });
+    } else {
+      hazards.push({ kind: 'bolt', x: player.x, y: player.y, r: 24, t: 0, delay: 0.45, dmgE: 90, dmgP: 10, color: m.doodle });
+    }
+  } else if (m.mech === 'tumble' || m.mech === 'tide') {
+    const fromLeft = Math.random() < 0.5;
+    const wide = m.mech === 'tide';
+    hazards.push({
+      kind: 'tumble',
+      x: fromLeft ? camera.x - 50 : camera.x + VW + 50,
+      y: camera.y + rnd(30, VH - 30),
+      vx: (fromLeft ? 1 : -1) * (wide ? 130 : 170),
+      vy: 0,
+      r: wide ? 34 : 24,
+      t: 0,
+      life: 10,
+      hitCd: 0,
+      dmgE: wide ? 35 : 28,
+      dmgP: wide ? 14 : 10,
+      color: m.doodle,
+      wide,
+    });
+  } else if (m.mech === 'four') {
+    onFourPhase();
+  }
+}
+
+function onFourPhase() {
+  const names = ['风：脚步变快', '林：生命回复', '火：灼烧领域', '山：怪物迟缓'];
+  addText(player.x, player.y - 44, names[fourPhase], COL.goldDark, 13);
+  if (fourPhase === 2) {
+    for (let i = 0; i < 2; i++) {
+      const a = rnd(0, TAU);
+      const d = rnd(60, 150);
+      hazards.push({ kind: 'zone', x: player.x + Math.cos(a) * d, y: player.y + Math.sin(a) * d, r: 40, t: 0, delay: 1.0, dmgE: 45, dmgP: 12, color: currentMap.doodle });
+    }
+  }
+}
+
+function updateHazards(dt) {
+  for (let i = hazards.length - 1; i >= 0; i--) {
+    const h = hazards[i];
+    h.t += dt;
+    if (h.kind === 'zone') {
+      if (h.t >= h.delay) {
+        for (const e of enemies) {
+          if (!e.dead && Math.hypot(e.x - h.x, e.y - h.y) < h.r + e.r) damageEnemy(e, h.dmgE);
+        }
+        if (Math.hypot(player.x - h.x, player.y - h.y) < h.r + player.r) damagePlayer(h.dmgP);
+        for (let k = 0; k < 12; k++) {
+          puff(h.x + rnd(-h.r, h.r) * 0.7, h.y + rnd(-h.r, h.r) * 0.7, h.color, 1, 90, 0.45);
+        }
+        hazards.splice(i, 1);
+      }
+    } else if (h.kind === 'bolt') {
+      if (h.t >= h.delay) {
+        for (const e of enemies) {
+          if (!e.dead && Math.hypot(e.x - h.x, e.y - h.y) < h.r + e.r) damageEnemy(e, h.dmgE);
+        }
+        if (Math.hypot(player.x - h.x, player.y - h.y) < h.r + player.r) damagePlayer(h.dmgP);
+        for (let k = 0; k < 14; k++) puff(h.x, h.y, COL.gold, 1, 150, 0.4);
+        hazards.splice(i, 1);
+      }
+    } else if (h.kind === 'tumble') {
+      h.x += h.vx * dt;
+      h.y += h.vy * dt;
+      h.hitCd -= dt;
+      if (h.hitCd <= 0) {
+        h.hitCd = 0.35;
+        for (const e of enemies) {
+          if (!e.dead && Math.hypot(e.x - h.x, e.y - h.y) < h.r + e.r) damageEnemy(e, h.dmgE);
+        }
+        if (Math.hypot(player.x - h.x, player.y - h.y) < h.r + player.r) damagePlayer(h.dmgP);
+      }
+      if (h.x < camera.x - 250 || h.x > camera.x + VW + 250) hazards.splice(i, 1);
+    }
+  }
 }
 
 function completeLevel() {
@@ -806,6 +937,22 @@ function update(dt) {
     return;
   }
 
+  // 地图机制
+  if (currentMap.mech === 'four') {
+    fourT += dt;
+    if (fourT >= currentMap.interval) { fourT = 0; fourPhase = (fourPhase + 1) % 4; onFourPhase(); }
+    if (fourPhase === 1) player.hp = Math.min(player.maxHp, player.hp + 5 * dt);
+    if (fourPhase === 2) {
+      for (const e of enemies) {
+        if (!e.dead && e.boss !== true && dist(player, e) < 95) damageEnemy(e, 14 * dt);
+      }
+    }
+  } else if (currentMap.interval > 0) {
+    mechT -= dt;
+    if (mechT <= 0) { mechT = currentMap.interval; spawnMechanic(); }
+  }
+  updateHazards(dt);
+
   // 移动
   let mx = 0;
   let my = 0;
@@ -826,8 +973,9 @@ function update(dt) {
   }
   const ml = Math.hypot(mx, my);
   if (ml > 1) { mx /= ml; my /= ml; }
-  player.x = clamp(player.x + mx * player.speed * dt, 20, WORLD.w - 20);
-  player.y = clamp(player.y + my * player.speed * dt, 20, WORLD.h - 20);
+  const spdMul = (currentMap.mech === 'four' && fourPhase === 0) ? 1.25 : 1;
+  player.x = clamp(player.x + mx * player.speed * spdMul * dt, 20, WORLD.w - 20);
+  player.y = clamp(player.y + my * player.speed * spdMul * dt, 20, WORLD.h - 20);
 
   // 护盾回复
   if (player.shieldMax > 0) {
@@ -943,7 +1091,12 @@ function update(dt) {
         vx *= hop;
         vy *= hop;
       }
-      const spd = e.speed * (e.slowT > 0 ? e.slowMul : 1);
+      let fieldSlow = 1;
+      for (const f of fields) {
+        if (Math.hypot(e.x - f.x, e.y - f.y) < f.r + e.r * 0.5) { fieldSlow = Math.min(fieldSlow, f.slow); break; }
+      }
+      const mountainSlow = (currentMap.mech === 'four' && fourPhase === 3) ? 0.75 : 1;
+      const spd = e.speed * (e.slowT > 0 ? e.slowMul : 1) * fieldSlow * mountainSlow;
       e.x += vx * spd * dt;
       e.y += vy * spd * dt;
       if (e.slowT > 0) e.slowT -= dt;
@@ -1152,6 +1305,7 @@ function render() {
   ctx.translate(-Math.round(camera.x), -Math.round(camera.y));
 
   drawGround();
+  drawHazards();
 
   const drawables = [];
   for (const e of enemies) if (!e.dead) drawables.push({ y: e.y, kind: 'enemy', e });
@@ -1195,6 +1349,7 @@ function render() {
   }
 
   ctx.restore();
+  drawMapFrame();
   drawHUD();
   drawOverlays();
 }
@@ -1210,6 +1365,66 @@ function drawGround() {
   }
   // 世界边界
   roughBox(ctx, 0, 0, WORLD.w, WORLD.h, null, 'rgba(58,48,38,0.18)', 3);
+}
+
+function drawHazards() {
+  for (const f of fields) {
+    if (f.x < camera.x - 80 || f.x > camera.x + VW + 80 || f.y < camera.y - 80 || f.y > camera.y + VH + 80) continue;
+    if (f.kind === 'bush') {
+      roughCircle(ctx, f.x, f.y, f.r, tint(f.color, 0.18), tint(f.color, 0.55), 1.8, 10);
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * TAU + f.x * 0.01;
+        roughCircle(ctx, f.x + Math.cos(a) * f.r * 0.55, f.y + Math.sin(a) * f.r * 0.55, f.r * 0.34, tint(f.color, 0.3), null, 0, 7);
+      }
+    } else {
+      roughEllipse(ctx, f.x, f.y, f.r, f.r * 0.72, tint(f.color, 0.22), tint(f.color, 0.55), 1.6, 14);
+      roughEllipse(ctx, f.x - f.r * 0.3, f.y - f.r * 0.2, f.r * 0.25, f.r * 0.16, tint(f.color, 0.35), null, 0, 9);
+    }
+  }
+  for (const h of hazards) {
+    if (h.x < camera.x - 120 || h.x > camera.x + VW + 120 || h.y < camera.y - 120 || h.y > camera.y + VH + 120) continue;
+    if (h.kind === 'zone') {
+      const k = Math.min(1, h.t / h.delay);
+      roughCircle(ctx, h.x, h.y, h.r, null, tint(h.color, 0.35 + 0.5 * k), 2.2, 14);
+      roughCircle(ctx, h.x, h.y, h.r * (0.25 + 0.7 * k), tint(h.color, 0.16), null, 0, 12);
+      roughCircle(ctx, h.x, h.y, 3, tint(h.color, 0.8), null, 0, 6);
+    } else if (h.kind === 'bolt') {
+      roughLine(ctx, h.x, h.y - 70, h.x, h.y, tint(h.color, 0.45), 2);
+      roughCircle(ctx, h.x, h.y, h.r, null, tint(h.color, 0.7), 2.2, 10);
+      roughCircle(ctx, h.x, h.y, h.r * 0.4, tint(h.color, 0.3), null, 0, 8);
+    } else if (h.kind === 'tumble') {
+      roughCircle(ctx, h.x, h.y, h.r, tint(h.color, 0.22), COL.ink, 1.6, 10);
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * TAU + h.t * 4;
+        roughLine(ctx, h.x + Math.cos(a) * h.r * 0.4, h.y + Math.sin(a) * h.r * 0.4, h.x + Math.cos(a) * h.r * 1.25, h.y + Math.sin(a) * h.r * 1.25, tint(h.color, 0.55), 1.4);
+      }
+    }
+  }
+}
+
+function drawMapFrame() {
+  const m = currentMap;
+  const col = tint(m.doodle, 0.75);
+  const p = 5;
+  const wavy = (x1, y1, x2, y2, horiz) => {
+    ctx.beginPath();
+    const n = 16;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const x = x1 + (x2 - x1) * t;
+      const y = y1 + (y2 - y1) * t;
+      const off = Math.sin(t * Math.PI * 7) * 1.6;
+      if (i === 0) ctx.moveTo(horiz ? x : x + off, horiz ? y + off : y);
+      else ctx.lineTo(horiz ? x : x + off, horiz ? y + off : y);
+    }
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  };
+  wavy(p, p, VW - p, p, true);
+  wavy(p, VH - p, VW - p, VH - p, true);
+  wavy(p, p, p, VH - p, false);
+  wavy(VW - p, p, VW - p, VH - p, false);
 }
 
 function drawPlayer() {
@@ -1370,41 +1585,41 @@ function drawBullet(b, color) {
 
 // ---------------- HUD ----------------
 function drawHUD() {
-  // 血条
-  const hw = 150;
-  roughBox(ctx, 12, 12, hw, 16, COL.white, COL.ink, 1.6);
+  // 血条（紧凑）
+  const hw = 104;
+  roughBox(ctx, 8, 8, hw, 11, COL.white, COL.ink, 1.2);
   if (player.hp > 0) {
-    roughBox(ctx, 14, 14, (hw - 4) * clamp(player.hp / player.maxHp, 0, 1), 12, COL.red, null, 0);
+    roughBox(ctx, 9, 9, (hw - 2) * clamp(player.hp / player.maxHp, 0, 1), 9, COL.red, null, 0);
   }
-  text(Math.ceil(player.hp) + ' / ' + player.maxHp, 12 + hw / 2, 14, 10, COL.ink, 'center', true);
+  text(Math.ceil(player.hp) + '/' + player.maxHp, 8 + hw / 2, 9, 8, COL.ink, 'center', true);
 
   // 经验条
-  roughBox(ctx, 12, 33, hw, 8, '#f0e6d2', COL.ink, 1.2);
-  roughBox(ctx, 13, 34, (hw - 2) * clamp(player.xp / player.xpNeed, 0, 1), 6, COL.blue, null, 0);
-  text('Lv.' + player.level, 12 + hw + 10, 31, 11, COL.ink, 'left', true);
-
-  // 武器槽
-  for (let i = 0; i < MAX_SLOTS; i++) {
-    const bx = 12 + i * 78;
-    const w = weapons[i];
-    roughBox(ctx, bx, 46, 72, 22, w ? '#fffdf8' : '#efe6d4', COL.ink, 1.2);
-    if (w) {
-      text(WEAPON_DEFS[w.id].short, bx + 4, 49, 9, COL.ink);
-      text('Lv' + w.level, bx + 68, 50, 8, COL.inkSoft, 'right');
-    } else {
-      text('空', bx + 36, 51, 8, COL.inkSoft, 'center');
-    }
-  }
+  roughBox(ctx, 8, 21, hw, 5, '#f0e6d2', COL.ink, 1);
+  roughBox(ctx, 9, 22, (hw - 2) * clamp(player.xp / player.xpNeed, 0, 1), 3, COL.blue, null, 0);
+  text('Lv.' + player.level, 8 + hw + 6, 18, 9, COL.ink, 'left', true);
   if (player.shieldMax > 0) {
-    text('盾 ' + Math.ceil(player.shield), 12 + hw + 10, 12, 9, COL.purple);
+    text('盾' + Math.ceil(player.shield), 8 + hw + 6, 6, 8, COL.purple);
+  }
+
+  // 武器槽（小）
+  for (let i = 0; i < MAX_SLOTS; i++) {
+    const bx = 8 + i * 52;
+    const w = weapons[i];
+    roughBox(ctx, bx, 29, 48, 15, w ? '#fffdf8' : '#efe6d4', COL.ink, 1);
+    if (w) {
+      text(WEAPON_DEFS[w.id].short, bx + 3, 31, 8, COL.ink);
+      text('Lv' + w.level, bx + 45, 32, 6, COL.inkSoft, 'right');
+    } else {
+      text('空', bx + 24, 32, 7, COL.inkSoft, 'center');
+    }
   }
 
   // 时间 / 关卡
   const mm = Math.floor(time / 60);
   const ss = Math.floor(time % 60);
-  text(mm + ':' + String(ss).padStart(2, '0'), VW / 2, 8, 16, COL.ink, 'center', true);
+  text(mm + ':' + String(ss).padStart(2, '0'), VW / 2, 6, 13, COL.ink, 'center', true);
   const modeTag = runMode === 'endless' ? '无尽' : '剧情';
-  text('第 ' + (levelIdx + 1) + ' 关 · ' + currentMap.name + ' · ' + modeTag + ' · 击杀 ' + kills, VW / 2, 28, 10, COL.inkSoft, 'center');
+  text('第 ' + (levelIdx + 1) + ' 关 · ' + currentMap.name + ' · ' + modeTag + ' · 击杀 ' + kills, VW / 2, 21, 8, COL.inkSoft, 'center');
 
   // 暂停按钮
   roughCircle(ctx, pauseBtn.x + pauseBtn.w / 2, pauseBtn.y + pauseBtn.h / 2, 14, COL.white, COL.ink, 1.6, 10);
@@ -1592,6 +1807,9 @@ window.__ps = {
   get runMode() { return runMode; },
   get level() { return levelIdx + 1; },
   get currentMap() { return currentMap.name; },
+  get fields() { return fields; },
+  get hazards() { return hazards; },
+  get fourPhase() { return fourPhase; },
   jumpLevel(n) { levelIdx = n - 1; startLevel(); },
   next: nextLevel,
   setEnch(id, lv) { ench[id] = lv; },

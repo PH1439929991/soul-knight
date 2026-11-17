@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>纸片幸存者 · 九地图背景总览</title>
+  <style>
+    :root { color-scheme: light; --ink:#3a3026; --paper:#f6e7c8; --card:#fff7e6; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Chalkboard SE","Marker Felt","HanziPen SC","Yuanti SC","PingFang SC",sans-serif;
+      background:
+        radial-gradient(circle at 20% 10%, rgba(255,255,255,.45), transparent 28%),
+        repeating-linear-gradient(0deg, rgba(107,78,45,.035) 0 1px, transparent 1px 6px),
+        var(--paper);
+    }
+    header { padding: 22px 24px 12px; text-align: center; }
+    h1 { margin: 0; font-size: clamp(24px,3vw,42px); letter-spacing: .14em; }
+    header p { margin: 8px 0 0; color: #806c54; font-size: 14px; }
+    main {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(260px, 1fr));
+      gap: 18px;
+      width: min(1500px, calc(100% - 32px));
+      margin: 8px auto 30px;
+    }
+    article {
+      overflow: hidden;
+      padding: 9px;
+      background: var(--card);
+      border: 3px solid var(--ink);
+      border-radius: 15px 11px 17px 10px;
+      box-shadow: 7px 8px 0 rgba(82,57,35,.16);
+      transform: rotate(var(--tilt,0deg));
+    }
+    article:nth-child(3n+1) { --tilt:-.25deg; }
+    article:nth-child(3n+2) { --tilt:.18deg; }
+    article:nth-child(3n) { --tilt:-.12deg; }
+    .label { display:flex; align-items:baseline; justify-content:space-between; padding: 2px 4px 8px; }
+    h2 { margin:0; font-size:20px; letter-spacing:.08em; }
+    small { color:#8a7359; }
+    iframe {
+      display:block;
+      width:100%;
+      aspect-ratio:16/9;
+      border:2px solid rgba(58,48,38,.7);
+      border-radius:8px;
+      background:#eee;
+      pointer-events:none;
+    }
+    a { color:inherit; text-decoration:none; }
+    a:hover h2 { color:#bd6a35; }
+    @media (max-width: 900px) { main { grid-template-columns: repeat(2,minmax(240px,1fr)); } }
+    @media (max-width: 580px) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>九地图背景总览</h1>
+    <p>实际游戏 Canvas 实时渲染 · 点击地图名称可进入该地图试玩</p>
+  </header>
+  <main>
+    <article><a href="index.html?map=forest" target="_blank"><div class="label"><h2>森林</h2><small>林间纸雕</small></div></a><iframe src="index.html?map=forest&amp;autostart=1&amp;background=1"></iframe></article>
+    <article><a href="index.html?map=waste" target="_blank"><div class="label"><h2>荒漠</h2><small>枯木风沙</small></div></a><iframe src="index.html?map=waste&amp;autostart=1&amp;background=1"></iframe></article>
+    <article><a href="index.html?map=desert" target="_blank"><div class="label"><h2>沙漠</h2><small>砂岩绿洲</small></div></a><iframe src="index.html?map=desert&amp;autostart=1&amp;background=1"></iframe></article>
+    <article><a href="index.html?map=swamp" target="_blank"><div class="label"><h2>沼泽</h2><small>湿地睡莲</small></div></a><iframe src="index.html?map=swamp&amp;autostart=1&amp;background=1"></iframe></article>
+    <article><a href="index.html?map=ocean" target="_blank"><div class="label"><h2>海洋</h2><small>浅滩珊瑚</small></div></a><iframe src="index.html?map=ocean&amp;autostart=1&amp;background=1"></iframe></article>
+    <article><a href="index.html?map=volcano" target="_blank"><div class="label"><h2>火山</h2><small>熔岩玄武岩</small></div></a><iframe src="index.html?map=volcano&amp;autostart=1&amp;background=1"></iframe></article>
+    <article><a href="index.html?map=inferno" target="_blank"><div class="label"><h2>炼狱</h2><small>焦土黑曜石</small></div></a><iframe src="index.html?map=inferno&amp;autostart=1&amp;background=1"></iframe></article>
+    <article><a href="index.html?map=heaven" target="_blank"><div class="label"><h2>天宫</h2><small>云台神龛</small></div></a><iframe src="index.html?map=heaven&amp;autostart=1&amp;background=1"></iframe></article>
+    <article><a href="index.html?map=four" target="_blank"><div class="label"><h2>风林火山</h2><small>四象轮转</small></div></a><iframe src="index.html?map=four&amp;autostart=1&amp;background=1"></iframe></article>
+  </main>
+</body>
+</html>

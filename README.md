@@ -11,6 +11,7 @@
 |---|---|
 | [`soul-knight-proto/`](soul-knight-proto/) | H5 版，电脑 / 手机浏览器直接玩，键鼠 / 手柄 / 触屏三套操作 |
 | [`soul-knight-minigame/`](soul-knight-minigame/) | 微信小游戏版，复用同一份 `game.js`，只加了一层 `wx` 适配层 |
+| [`paper-survivors/`](paper-survivors/) | 幸存者类原型（P1），自动攻击 + 升级三选一 + Boss |
 
 ## 本地运行
 

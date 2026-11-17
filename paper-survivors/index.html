@@ -76,22 +76,10 @@
   }
   #name-actions button[type="submit"] { background: #f5c542; }
   @media (pointer: coarse) { #fullscreen-btn { display: block; } }
-  @media (orientation: portrait) and (max-width: 820px) and (pointer: coarse) {
-    #rotate { display: flex; }
-    #fullscreen-btn { display: none; }
-  }
 </style>
 </head>
 <body>
   <canvas id="game"></canvas>
-  <div id="rotate" role="dialog" aria-label="横屏游玩提示">
-    <div id="rotate-card">
-      <span id="rotate-icon">↻</span>
-      <strong>旋转手机，横屏开战</strong>
-      <p>横屏可以完整显示 HUD、升级卡和触控摇杆；进入全屏后体验更稳定。</p>
-      <button type="button" id="rotate-action">进入横屏全屏</button>
-    </div>
-  </div>
   <button type="button" id="fullscreen-btn" aria-label="进入全屏">⛶</button>
   <div id="name-editor" hidden>
     <form id="name-card">

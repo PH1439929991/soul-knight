@@ -20,8 +20,12 @@
 // =============================================================
 // 1. 常量 / 工具
 // =============================================================
-const VW = 640;
-const VH = 360;
+const LANDSCAPE_VW = 640;
+const LANDSCAPE_VH = 360;
+const PORTRAIT_VW = 360;
+let VW = LANDSCAPE_VW;
+let VH = LANDSCAPE_VH;
+let portraitLayout = false;
 const STEP = 1 / 60;
 const WORLD = { w: 3000, h: 2000 };
 const TILE_P = 256;
@@ -286,6 +290,11 @@ function resize() {
   const insetY = (parseFloat(bodyStyle.paddingTop) || 0) + (parseFloat(bodyStyle.paddingBottom) || 0);
   const viewW = Math.max(1, (viewport ? viewport.width : window.innerWidth) - insetX);
   const viewH = Math.max(1, (viewport ? viewport.height : window.innerHeight) - insetY);
+  const nextPortrait = viewH > viewW * 1.08 && viewW <= 820;
+  portraitLayout = nextPortrait;
+  VW = nextPortrait ? PORTRAIT_VW : LANDSCAPE_VW;
+  VH = nextPortrait ? clamp(Math.round(PORTRAIT_VW * viewH / viewW), 560, 780) : LANDSCAPE_VH;
+  updateLayoutRects();
   const fit = Math.min(viewW / VW, viewH / VH);
   const cssW = Math.max(1, Math.floor(VW * fit));
   const cssH = Math.max(1, Math.floor(VH * fit));
@@ -309,8 +318,7 @@ async function requestGameFullscreen() {
       const request = root.requestFullscreen || root.webkitRequestFullscreen;
       if (request) await request.call(root);
     }
-    if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape');
-  } catch (_) { /* iOS 等环境会要求用户手动旋转，保留提示即可 */ }
+  } catch (_) { /* 某些移动浏览器不支持页面全屏，保持普通竖屏继续游戏 */ }
   setTimeout(resize, 120);
 }
 if (rotateAction) rotateAction.addEventListener('click', requestGameFullscreen);
@@ -857,30 +865,46 @@ function setEnchantment(id, level) {
 }
 const statLevels = { dmg: 0, rate: 0, crit: 0, speed: 0, hp: 0, magnet: 0, heal: 0 };
 
-const startBtn = { x: VW / 2 - 110, y: 214, w: 220, h: 46 };
-const nameBtn = { x: VW / 2 - 80, y: 190, w: 160, h: 18 };
-const musicBtn = { x: 10, y: 334, w: 82, h: 16 };
+const startBtn = { x: 0, y: 0, w: 220, h: 46 };
+const nameBtn = { x: 0, y: 0, w: 160, h: 18 };
+const musicBtn = { x: 10, y: 0, w: 82, h: 16 };
 function diffBtn(i) {
-  const w = 100, h = 26, gap = 12;
+  const w = portraitLayout ? 100 : 100, h = 26, gap = portraitLayout ? 8 : 12;
   const total = w * 3 + gap * 2;
-  return { x: (VW - total) / 2 + i * (w + gap), y: 274, w, h };
+  return { x: (VW - total) / 2 + i * (w + gap), y: portraitLayout ? 352 : 274, w, h };
 }
 const DIFF_KEYS = ['easy', 'elite', 'adventurer'];
 const MODE_KEYS = ['story', 'endless'];
 const MODE_NAMES = { story: '剧情模式', endless: '无尽模式' };
 function modeBtn(i) {
-  const w = 150, h = 24, gap = 12;
+  const w = portraitLayout ? 156 : 150, h = 24, gap = portraitLayout ? 10 : 12;
   const total = w * 2 + gap;
-  return { x: (VW - total) / 2 + i * (w + gap), y: 306, w, h };
+  return { x: (VW - total) / 2 + i * (w + gap), y: portraitLayout ? 392 : 306, w, h };
 }
-const pauseBtn = { x: VW - 44, y: 10, w: 34, h: 34 };
-const pauseContinueBtn = { x: VW / 2 - 92, y: 166, w: 184, h: 38 };
-const pauseHomeBtn = { x: VW / 2 - 92, y: 218, w: 184, h: 38 };
+const pauseBtn = { x: 0, y: 10, w: 34, h: 34 };
+const pauseContinueBtn = { x: 0, y: 166, w: 184, h: 38 };
+const pauseHomeBtn = { x: 0, y: 218, w: 184, h: 38 };
+
+function updateLayoutRects() {
+  startBtn.x = VW / 2 - (portraitLayout ? 120 : 110);
+  startBtn.y = portraitLayout ? 286 : 214;
+  startBtn.w = portraitLayout ? 240 : 220;
+  startBtn.h = portraitLayout ? 50 : 46;
+  nameBtn.x = VW / 2 - (portraitLayout ? 100 : 80);
+  nameBtn.y = portraitLayout ? 250 : 190;
+  nameBtn.w = portraitLayout ? 200 : 160;
+  nameBtn.h = portraitLayout ? 22 : 18;
+  musicBtn.y = portraitLayout ? VH - 42 : 334;
+  pauseBtn.x = VW - 44;
+  pauseContinueBtn.x = VW / 2 - 92;
+  pauseContinueBtn.y = portraitLayout ? VH / 2 - 45 : 166;
+  pauseHomeBtn.x = VW / 2 - 92;
+  pauseHomeBtn.y = portraitLayout ? VH / 2 + 7 : 218;
+}
 
 function cardRect(i) {
-  const w = 168;
-  const h = 154;
-  const gap = 16;
+  if (portraitLayout) return { x: 30, y: 84 + i * 160, w: VW - 60, h: 146 };
+  const w = 168, h = 154, gap = 16;
   const total = w * 3 + gap * 2;
   return { x: (VW - total) / 2 + i * (w + gap), y: 104, w, h };
 }
@@ -4066,8 +4090,9 @@ function cardAccent(card) {
 
 // ---------------- HUD ----------------
 function drawMechanicStatus() {
-  const x = VW - 190;
-  const y = 9;
+  if (time >= 10) return;
+  const x = portraitLayout ? (VW - 136) / 2 : VW - 190;
+  const y = portraitLayout ? 156 : 9;
   const w = 136;
   const h = 38;
   const isFour = currentMap.mech === 'four';
@@ -4079,7 +4104,8 @@ function drawMechanicStatus() {
     ? clamp(1 - remaining / currentMap.interval, 0, 1)
     : 1;
   const warning = currentMap.interval > 0 && remaining < 1.25;
-  const pulse = warning ? 0.5 + Math.sin(performance.now() / 85) * 0.18 : 0.92;
+  const introFade = time > 8 ? clamp((10 - time) / 2, 0, 1) : 1;
+  const pulse = (warning ? 0.5 + Math.sin(performance.now() / 85) * 0.18 : 0.92) * introFade;
 
   ctx.save();
   ctx.globalAlpha = pulse;
@@ -4169,33 +4195,36 @@ function drawHUD() {
     text(def.name, bx + 35, by + 17, 7.2, COL.ink, 'left', true);
     text('Lv.' + ench[primaryId], bx + bw - 6, by + 6, 6, accent, 'right', true);
   }
-  roughBox(ctx, 10, 96, 92, 14, 'rgba(255,249,235,0.92)', COL.ink, 0.9);
-  doodleStar(ctx, 20, 103, 4, COL.goldDark, 1.3);
-  text('暴击 ' + Math.round(critChance * 100) + '%  ×' + critMult.toFixed(2), 29, 99, 7, COL.ink, 'left', true);
+  const statY = portraitLayout ? 100 : 96;
+  roughBox(ctx, 10, statY, 92, 14, 'rgba(255,249,235,0.92)', COL.ink, 0.9);
+  doodleStar(ctx, 20, statY + 7, 4, COL.goldDark, 1.3);
+  text('暴击 ' + Math.round(critChance * 100) + '%  ×' + critMult.toFixed(2), 29, statY + 3, 7, COL.ink, 'left', true);
   const itemIds = Object.keys(ownedItems);
   if (itemIds.length) {
-    roughBox(ctx, 10, 114, Math.max(28, itemIds.length * 20 + 8), 24, 'rgba(255,249,235,0.92)', COL.ink, 0.9);
+    const itemY = portraitLayout ? 120 : 114;
+    roughBox(ctx, 10, itemY, Math.max(28, itemIds.length * 20 + 8), 24, 'rgba(255,249,235,0.92)', COL.ink, 0.9);
     for (let i = 0; i < itemIds.length; i++) {
-      roughCircle(ctx, 24 + i * 20, 126, 8, '#f5e5c7', COL.ink, 0.7, 7);
-      drawItemIcon(itemIds[i], 24 + i * 20, 126, 8);
+      roughCircle(ctx, 24 + i * 20, itemY + 12, 8, '#f5e5c7', COL.ink, 0.7, 7);
+      drawItemIcon(itemIds[i], 24 + i * 20, itemY + 12, 8);
     }
   }
 
   // 时间与关卡进度
   const mm = Math.floor(time / 60);
   const ss = Math.floor(time % 60);
-  roughBox(ctx, VW / 2 - 61, 7, 122, 38, 'rgba(255,249,235,0.94)', COL.ink, 1.4);
-  roughCircle(ctx, VW / 2 - 42, 25, 12, '#f4e6c8', COL.ink, 1.2, 10);
-  roughLine(ctx, VW / 2 - 42, 25, VW / 2 - 42, 17, COL.ink, 1.5);
-  roughLine(ctx, VW / 2 - 42, 25, VW / 2 - 36, 28, COL.ink, 1.5);
-  text(mm + ':' + String(ss).padStart(2, '0'), VW / 2 + 14, 11, 14, COL.ink, 'center', true);
+  const timerY = portraitLayout ? 100 : 7;
+  roughBox(ctx, VW / 2 - 61, timerY, 122, 38, 'rgba(255,249,235,0.94)', COL.ink, 1.4);
+  roughCircle(ctx, VW / 2 - 42, timerY + 18, 12, '#f4e6c8', COL.ink, 1.2, 10);
+  roughLine(ctx, VW / 2 - 42, timerY + 18, VW / 2 - 42, timerY + 10, COL.ink, 1.5);
+  roughLine(ctx, VW / 2 - 42, timerY + 18, VW / 2 - 36, timerY + 21, COL.ink, 1.5);
+  text(mm + ':' + String(ss).padStart(2, '0'), VW / 2 + 14, timerY + 4, 14, COL.ink, 'center', true);
   const modeTag = runMode === 'endless' ? '无尽' : '剧情';
-  text('第 ' + (levelIdx + 1) + ' 关 · ' + currentMap.name + ' · ' + modeTag, VW / 2 + 14, 29, 7, COL.inkSoft, 'center');
+  text('第 ' + (levelIdx + 1) + ' 关 · ' + currentMap.name + ' · ' + modeTag, VW / 2 + 14, timerY + 22, 7, COL.inkSoft, 'center');
   const progress = Math.max(time / BOSS_TIME, kills / KILL_QUOTA);
   for (let i = 0; i < 5; i++) {
-    roughCircle(ctx, VW / 2 - 24 + i * 12, 50, 3.2, progress * 5 > i ? COL.gold : '#eadfcf', COL.ink, 0.7, 7);
+    roughCircle(ctx, VW / 2 - 24 + i * 12, timerY + 43, 3.2, progress * 5 > i ? COL.gold : '#eadfcf', COL.ink, 0.7, 7);
   }
-  text('击杀 ' + kills, VW / 2 + 47, 46, 7, COL.inkSoft, 'left');
+  text('击杀 ' + kills, VW / 2 + 47, timerY + 39, 7, COL.inkSoft, 'left');
 
   drawMechanicStatus();
 
@@ -4207,7 +4236,7 @@ function drawHUD() {
   // Boss 血条
   const boss = enemies.find((e) => e.boss && !e.dead);
   if (boss) {
-    const bw = 330;
+    const bw = portraitLayout ? VW - 58 : 330;
     roughCircle(ctx, (VW - bw) / 2 - 16, VH - 20, 16, '#f4e6c8', COL.ink, 1.5, 10);
     roughCircle(ctx, (VW - bw) / 2 - 16, VH - 19, 10, boss.color, COL.ink, 1.2, 9);
     fillPoly(ctx, [[(VW - bw) / 2 - 25, VH - 30], [(VW - bw) / 2 - 21, VH - 40], [(VW - bw) / 2 - 16, VH - 34], [(VW - bw) / 2 - 10, VH - 40], [(VW - bw) / 2 - 7, VH - 30]], COL.gold);
@@ -4266,16 +4295,17 @@ function drawOverlays() {
   } else if (state === 'paused') {
     ctx.fillStyle = 'rgba(43,36,29,0.52)';
     ctx.fillRect(0, 0, VW, VH);
-    roughBox(ctx, VW / 2 - 125, 78, 250, 206, '#fff7e5', COL.ink, 2.2);
-    roughCircle(ctx, VW / 2, 112, 20, '#f0dfbb', COL.ink, 1.5, 11);
-    roughLine(ctx, VW / 2 - 5, 102, VW / 2 - 5, 122, COL.ink, 3);
-    roughLine(ctx, VW / 2 + 5, 102, VW / 2 + 5, 122, COL.ink, 3);
-    text('暂 停', VW / 2, 135, 19, COL.ink, 'center', true);
+    const panelY = portraitLayout ? VH / 2 - 145 : 78;
+    roughBox(ctx, VW / 2 - 125, panelY, 250, portraitLayout ? 290 : 206, '#fff7e5', COL.ink, 2.2);
+    roughCircle(ctx, VW / 2, panelY + 34, 20, '#f0dfbb', COL.ink, 1.5, 11);
+    roughLine(ctx, VW / 2 - 5, panelY + 24, VW / 2 - 5, panelY + 44, COL.ink, 3);
+    roughLine(ctx, VW / 2 + 5, panelY + 24, VW / 2 + 5, panelY + 44, COL.ink, 3);
+    text('暂 停', VW / 2, panelY + 57, 19, COL.ink, 'center', true);
     roughBox(ctx, pauseContinueBtn.x, pauseContinueBtn.y, pauseContinueBtn.w, pauseContinueBtn.h, COL.gold, COL.ink, 1.8);
     text('继续游戏', VW / 2, pauseContinueBtn.y + 9, 14, COL.ink, 'center', true);
     roughBox(ctx, pauseHomeBtn.x, pauseHomeBtn.y, pauseHomeBtn.w, pauseHomeBtn.h, '#fffdf8', COL.ink, 1.6);
     text('返回主页面', VW / 2, pauseHomeBtn.y + 9, 14, COL.ink, 'center', true);
-    text('P / Esc 继续', VW / 2, 268, 8, COL.inkSoft, 'center');
+    text('P / Esc 继续', VW / 2, pauseHomeBtn.y + 50, 8, COL.inkSoft, 'center');
   } else if (state === 'dead') {
     ctx.fillStyle = 'rgba(253,246,228,0.92)';
     ctx.fillRect(0, 0, VW, VH);
@@ -4303,6 +4333,10 @@ function drawMenu() {
   const tile = getPaperTile();
   for (let x = 0; x < VW; x += TILE_P) {
     for (let y = 0; y < VH; y += TILE_P) ctx.drawImage(tile, x, y);
+  }
+  if (portraitLayout) {
+    drawMenuPortrait(now);
+    return;
   }
 
   // 装饰
@@ -4353,6 +4387,48 @@ function drawMenu() {
   text('♪ 音乐 ' + (Music.enabled ? '开' : '关'), musicBtn.x + musicBtn.w / 2, musicBtn.y + 3, 8, COL.ink, 'center', true);
   text('WASD 移动 · 自动攻击 · P 暂停 · M 音乐', VW / 2, 344, 9, COL.inkSoft, 'center');
   text('prototype P1.6', VW - 10, VH - 14, 8, COL.inkSoft, 'right');
+}
+
+function drawMenuPortrait(now) {
+  roughCircle(ctx, 46, 48, 16, COL.gold, COL.ink, 1.8, 10);
+  for (let i = 0; i < 8; i++) {
+    const a = i * TAU / 8 + 0.2;
+    roughLine(ctx, 46 + Math.cos(a) * 22, 48 + Math.sin(a) * 22, 46 + Math.cos(a) * 28, 48 + Math.sin(a) * 28, COL.ink, 1.3);
+  }
+  doodleStar(ctx, VW - 40, 76, 5, COL.red, 1.3);
+  text('纸 片 幸 存 者', VW / 2, 72, 30, COL.ink, 'center', true, -0.02);
+  roughLine(ctx, 48, 112, VW - 48, 112, COL.ink, 2);
+  text('PAPER SURVIVORS · 竖屏生存', VW / 2, 122, 9, COL.inkSoft, 'center');
+
+  const bob = Math.sin(now * 2) * 3;
+  drawMenuSlime(112, 205 + bob);
+  drawMenuSlime(168, 211 + Math.sin(now * 2 + 1) * 3);
+  drawMenuPlayer(250, 205 + Math.sin(now * 2 + 2) * 3);
+
+  roughBox(ctx, nameBtn.x, nameBtn.y, nameBtn.w, nameBtn.h, '#fffdf8', COL.ink, 1.2);
+  text('昵称 · ' + playerName, VW / 2, nameBtn.y + 5, 10, COL.ink, 'center', true);
+  roughLine(ctx, nameBtn.x + nameBtn.w - 18, nameBtn.y + 6, nameBtn.x + nameBtn.w - 10, nameBtn.y + 14, COL.goldDark, 1.5);
+
+  roughBox(ctx, startBtn.x, startBtn.y, startBtn.w, startBtn.h, '#f5c542', COL.ink, 2.2);
+  text('开始一局', VW / 2, startBtn.y + 13, 19, COL.ink, 'center', true);
+
+  text('难度', VW / 2, 338, 9, COL.inkSoft, 'center');
+  for (let i = 0; i < 3; i++) {
+    const r = diffBtn(i);
+    const sel = difficulty === DIFF_KEYS[i];
+    roughBox(ctx, r.x, r.y, r.w, r.h, sel ? '#f5c542' : '#fffdf8', COL.ink, sel ? 2.2 : 1.4);
+    text(DIFFS[DIFF_KEYS[i]].name, r.x + r.w / 2, r.y + 6, 11, COL.ink, 'center', sel);
+  }
+  for (let i = 0; i < 2; i++) {
+    const r = modeBtn(i);
+    const sel = runMode === MODE_KEYS[i];
+    roughBox(ctx, r.x, r.y, r.w, r.h, sel ? '#d9c3a0' : '#fffdf8', COL.ink, sel ? 2.2 : 1.4);
+    text(MODE_NAMES[MODE_KEYS[i]], r.x + r.w / 2, r.y + 5, 11, COL.ink, 'center', sel);
+  }
+  roughBox(ctx, musicBtn.x, musicBtn.y, musicBtn.w, musicBtn.h, Music.enabled ? '#f7ecd6' : '#efe6d4', COL.ink, 1);
+  text('♪ 音乐 ' + (Music.enabled ? '开' : '关'), musicBtn.x + musicBtn.w / 2, musicBtn.y + 3, 8, COL.ink, 'center', true);
+  text('左侧拖动移动 · 自动攻击 · 右上暂停', VW / 2, VH - 22, 8, COL.inkSoft, 'center');
+  text('P1.7 竖屏版', VW - 10, VH - 40, 7, COL.inkSoft, 'right');
 }
 
 function drawMenuSlime(x, y) {

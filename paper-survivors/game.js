@@ -198,20 +198,26 @@ function text(str, x, y, size, color, align, bold, rot) {
   ctx.restore();
 }
 
+function tint(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+}
+
 function measure(str, size, bold) {
   ctx.font = (bold ? '700 ' : '400 ') + size + 'px ' + FONT;
   return ctx.measureText(str).width;
 }
 
 // ---- 纸张 ----
-let paperTile = null;
-function getPaperTile() {
-  if (paperTile) return paperTile;
+const paperTiles = {};
+function getPaperTile(map) {
+  map = map || MAPS[0];
+  if (paperTiles[map.id]) return paperTiles[map.id];
   const c = document.createElement('canvas');
   c.width = TILE_P;
   c.height = TILE_P;
   const g = c.getContext('2d');
-  g.fillStyle = COL.paper;
+  g.fillStyle = map.ground;
   g.fillRect(0, 0, TILE_P, TILE_P);
   for (let i = 0; i < 900; i++) {
     g.fillStyle = 'rgba(122,96,62,' + (0.015 + Math.random() * 0.05).toFixed(3) + ')';
@@ -225,18 +231,19 @@ function getPaperTile() {
     const x = 20 + RD() * (TILE_P - 40);
     const y = 20 + RD() * (TILE_P - 40);
     const k = i % 3;
-    if (k === 0) doodleStar(g, x, y, 3 + RD() * 2, 'rgba(58,48,38,0.10)', 1);
-    else if (k === 1) doodleHeart(g, x, y, 3, null, 'rgba(58,48,38,0.10)', 1);
+    const dc = tint(map.doodle, 0.14);
+    if (k === 0) doodleStar(g, x, y, 3 + RD() * 2, dc, 1);
+    else if (k === 1) doodleHeart(g, x, y, 3, null, dc, 1);
     else {
       g.beginPath();
       g.arc(x, y, 2.5 + RD() * 2, 0.2, 4.7);
-      g.strokeStyle = 'rgba(58,48,38,0.10)';
+      g.strokeStyle = dc;
       g.lineWidth = 1;
       g.stroke();
     }
   }
   RD = saved;
-  paperTile = c;
+  paperTiles[map.id] = c;
   return c;
 }
 
@@ -257,7 +264,7 @@ window.addEventListener('keydown', (e) => {
   if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
   if (!Input.keys.has(k)) {
     Input.keys.add(k);
-    if (state === 'menu' || state === 'dead' || state === 'win') startGame();
+    if (state === 'menu' || state === 'dead' || state === 'win') startGame(runMode);
     else if (state === 'levelup' && ['1', '2', '3'].includes(k)) chooseCard(Number(k) - 1);
     else if (k === 'p' || k === 'escape') togglePause();
   }
@@ -273,13 +280,16 @@ canvas.addEventListener('pointerdown', (e) => {
 
   if (state === 'menu' || state === 'dead' || state === 'win') {
     if (state === 'menu') {
+      for (let i = 0; i < 2; i++) {
+        if (inside(p, modeBtn(i))) { runMode = MODE_KEYS[i]; return; }
+      }
       for (let i = 0; i < 3; i++) {
         if (inside(p, diffBtn(i))) { difficulty = DIFF_KEYS[i]; return; }
       }
-      if (inside(p, startBtn)) startGame();
+      if (inside(p, startBtn)) startGame(runMode);
       return;
     }
-    startGame();
+    startGame(runMode);
     return;
   }
   if (state === 'levelup') {
@@ -335,8 +345,24 @@ function inside(p, r) {
 // =============================================================
 const BOSS_TIME = 120;
 const KILL_QUOTA = 90;
+const MAPS = [
+  { id: 'forest',  name: '森林',     ground: '#eef3d9', grain: '#cdd8ae', doodle: '#9fbf7a', boss: '荆棘女王' },
+  { id: 'waste',   name: '荒漠',     ground: '#f3e8c9', grain: '#d9c396', doodle: '#c9a86a', boss: '沙虫' },
+  { id: 'desert',  name: '沙漠',     ground: '#f7e6b8', grain: '#e2cd8e', doodle: '#d8a84a', boss: '蝎王' },
+  { id: 'swamp',   name: '沼泽',     ground: '#dde8c8', grain: '#b8cf9a', doodle: '#7fa05e', boss: '沼泽巨蛙' },
+  { id: 'ocean',   name: '海洋',     ground: '#dfeef3', grain: '#bcd8e2', doodle: '#7fb4c9', boss: '深海章鱼' },
+  { id: 'volcano', name: '火山',     ground: '#f0dcc8', grain: '#d9b393', doodle: '#c9774a', boss: '熔岩巨像' },
+  { id: 'inferno', name: '炼狱',     ground: '#e9d2d2', grain: '#c99aa0', doodle: '#b04a5a', boss: '炼狱魔王' },
+  { id: 'heaven',  name: '天宫',     ground: '#e8eef6', grain: '#c5d4e6', doodle: '#8fa8cc', boss: '天将' },
+  { id: 'four',    name: '风林火山', ground: '#efe8d9', grain: '#d5c9ae', doodle: '#b0925c', boss: '四象之灵' },
+];
 
 let state = 'menu';
+let runMode = 'story';
+let levelIdx = 0;
+let currentMap = MAPS[0];
+let levelClear = false;
+let clearT = 0;
 let time = 0;
 let kills = 0;
 let camera = { x: 0, y: 0 };
@@ -374,6 +400,9 @@ const DIFFS = {
 };
 let difficulty = 'elite';
 function diff() { return DIFFS[difficulty]; }
+function levelCfg() { return { boss: (levelIdx + 1) % 4 === 0 }; }
+function levelMult() { return Math.pow(1.10, levelIdx); }
+function bossMult() { return Math.pow(1.30, Math.floor(levelIdx / 4)); }
 function maxSlots() {
   return Math.min(MAX_SLOTS, 1 + (player.level >= 3 ? 1 : 0) + (player.level >= 6 ? 1 : 0) + (player.level >= 9 ? 1 : 0));
 }
@@ -403,6 +432,13 @@ function diffBtn(i) {
   return { x: (VW - total) / 2 + i * (w + gap), y: 274, w, h };
 }
 const DIFF_KEYS = ['easy', 'elite', 'adventurer'];
+const MODE_KEYS = ['story', 'endless'];
+const MODE_NAMES = { story: '剧情模式', endless: '无尽模式' };
+function modeBtn(i) {
+  const w = 150, h = 24, gap = 12;
+  const total = w * 2 + gap;
+  return { x: (VW - total) / 2 + i * (w + gap), y: 306, w, h };
+}
 const pauseBtn = { x: VW - 44, y: 10, w: 34, h: 34 };
 
 function cardRect(i) {
@@ -413,7 +449,29 @@ function cardRect(i) {
   return { x: (VW - total) / 2 + i * (w + gap), y: 118, w, h };
 }
 
-function reset() {
+function newRun() {
+  levelIdx = 0;
+  weapons = [{ id: 'pencil', level: 1, timer: 0 }];
+  slashes = [];
+  dmgMul = 1;
+  atkSpeedMul = 1;
+  for (const k in ench) ench[k] = 0;
+  for (const k in statLevels) statLevels[k] = 0;
+  player.hp = 100;
+  player.maxHp = 100;
+  player.speed = 122;
+  player.magnet = 140;
+  player.level = 1;
+  player.xp = 0;
+  player.xpNeed = 10;
+  player.aim = 0;
+  player.shield = 0;
+  player.shieldMax = 0;
+  player.shieldRegen = 0;
+  startLevel();
+}
+
+function startLevel() {
   time = 0;
   kills = 0;
   spawnTimer = 0;
@@ -421,28 +479,12 @@ function reset() {
   bossSpawned = false;
   cards = [];
   flashT = 0;
+  levelClear = false;
+  clearT = 0;
 
   player.x = WORLD.w / 2;
   player.y = WORLD.h / 2;
-  player.hp = 100;
-  player.maxHp = 100;
-  player.speed = 122;
   player.inv = 0;
-  player.magnet = 140;
-  player.level = 1;
-  player.xp = 0;
-  player.xpNeed = 10;
-  player.aim = 0;
-
-  weapons = [{ id: 'pencil', level: 1, timer: 0 }];
-  slashes = [];
-  dmgMul = 1;
-  atkSpeedMul = 1;
-  for (const k in ench) ench[k] = 0;
-  for (const k in statLevels) statLevels[k] = 0;
-  player.shield = 0;
-  player.shieldMax = 0;
-  player.shieldRegen = 0;
 
   enemies = [];
   bullets = [];
@@ -451,14 +493,37 @@ function reset() {
   parts = [];
   texts = [];
 
+  if (runMode === 'endless') {
+    currentMap = MAPS[Math.floor(Math.random() * MAPS.length)];
+  } else {
+    currentMap = MAPS[Math.min(MAPS.length - 1, Math.floor(levelIdx / 4))];
+  }
+
   camera.x = clamp(player.x - VW / 2, 0, WORLD.w - VW);
   camera.y = clamp(player.y - VH / 2, 0, WORLD.h - VH);
-}
 
-function startGame() {
-  reset();
   state = 'play';
   for (let i = 0; i < 4; i++) spawnEnemy('slime');
+}
+
+function completeLevel() {
+  if (state !== 'play') return;
+  levelClear = true;
+  clearT = 1.8;
+}
+
+function nextLevel() {
+  levelIdx++;
+  if (runMode === 'story' && levelIdx >= MAPS.length * 4) {
+    state = 'win';
+    return;
+  }
+  startLevel();
+}
+
+function startGame(mode) {
+  runMode = mode || 'story';
+  newRun();
 }
 
 function togglePause() {
@@ -468,10 +533,13 @@ function togglePause() {
 
 // ---------------- 敌人 ----------------
 function enemyDef(type) {
-  if (type === 'slime') return { r: 9, hp: 20, speed: 60, dmg: 6, xp: 1, color: COL.green, dark: '#3f7f2c' };
-  if (type === 'bat') return { r: 7, hp: 12, speed: 100, dmg: 5, xp: 1, color: COL.purple, dark: '#5f3f8c' };
-  if (type === 'ink') return { r: 13, hp: 62, speed: 40, dmg: 9, xp: 3, color: '#4a4a5a', dark: '#2b2b36' };
-  return { r: 9, hp: 20, speed: 44, dmg: 8, xp: 1, color: COL.green, dark: '#3f7f2c' };
+  if (type === 'slime')    return { r: 9,  hp: 20, speed: 60,  dmg: 5,  xp: 1, color: COL.green,   dark: '#3f7f2c' };
+  if (type === 'bat')      return { r: 7,  hp: 12, speed: 100, dmg: 4,  xp: 1, color: COL.purple,  dark: '#5f3f8c' };
+  if (type === 'ink')      return { r: 13, hp: 62, speed: 40,  dmg: 7,  xp: 3, color: '#4a4a5a',   dark: '#2b2b36' };
+  if (type === 'shooter')  return { r: 8,  hp: 16, speed: 46,  dmg: 5,  xp: 2, color: '#c75a9a',   dark: '#8f3a6f' };
+  if (type === 'splitter') return { r: 10, hp: 22, speed: 52,  dmg: 6,  xp: 2, color: '#4a9a9a',   dark: '#2f6f6f' };
+  if (type === 'jumper')   return { r: 9,  hp: 18, speed: 60,  dmg: 6,  xp: 2, color: '#e08a3c',   dark: '#9f5f22' };
+  return { r: 9, hp: 20, speed: 44, dmg: 5, xp: 1, color: COL.green, dark: '#3f7f2c' };
 }
 
 function spawnPos() {
@@ -484,7 +552,7 @@ function spawnPos() {
 }
 
 function hpScale() {
-  return 1 + time / 90;
+  return 1 + time / 110;
 }
 
 function spawnEnemy(type) {
@@ -495,8 +563,8 @@ function spawnEnemy(type) {
     type,
     x: p.x, y: p.y,
     r: elite ? 20 : d.r,
-    hp: d.hp * hpScale() * (elite ? 7 : 1) * diff().hp,
-    maxHp: d.hp * hpScale() * (elite ? 7 : 1) * diff().hp,
+    hp: d.hp * hpScale() * (elite ? 7 : 1) * diff().hp * levelMult(),
+    maxHp: d.hp * hpScale() * (elite ? 7 : 1) * diff().hp * levelMult(),
     speed: elite ? 46 : d.speed,
     dmg: (elite ? 20 : d.dmg) * diff().dmg,
     xp: Math.max(1, Math.round((elite ? 14 : d.xp) * diff().xp)),
@@ -507,6 +575,7 @@ function spawnEnemy(type) {
     flash: 0,
     slowT: 0,
     slowMul: 1,
+    fireCd: rnd(1, 2),
     t: rnd(0, 4),
     phase: rnd(0, 6.28),
   });
@@ -518,7 +587,7 @@ function spawnBoss() {
   enemies.push({
     type: 'boss',
     x: p.x, y: p.y, r: 34,
-    hp: 1500 * diff().hp, maxHp: 1500 * diff().hp,
+    hp: 1500 * diff().hp * bossMult(), maxHp: 1500 * diff().hp * bossMult(),
     speed: 34, dmg: 22, xp: 0,
     color: '#b23a2c', dark: '#7a2418',
     elite: false, boss: true,
@@ -530,13 +599,13 @@ function spawnBoss() {
 }
 
 function spawnWave() {
-  const t = time;
   const pool = ['slime'];
-  if (t > 20) pool.push('bat');
-  if (t > 45) pool.push('ink');
-  if (t > 90) pool.push('bat', 'ink');
-  const n = 1;
-  for (let i = 0; i < n; i++) spawnEnemy(pool[Math.floor(Math.random() * pool.length)]);
+  if (levelIdx >= 1) pool.push('bat');
+  if (levelIdx >= 2) pool.push('ink');
+  if (levelIdx >= 3) pool.push('shooter');
+  if (levelIdx >= 5) pool.push('splitter');
+  if (levelIdx >= 7) pool.push('jumper');
+  spawnEnemy(pool[Math.floor(Math.random() * pool.length)]);
 }
 
 // ---------------- 升级 ----------------
@@ -660,11 +729,18 @@ function killEnemy(e) {
   e.dead = true;
   kills++;
   if (e.boss) {
-    state = 'win';
     for (let i = 0; i < 60; i++) puff(e.x, e.y, i % 2 ? COL.gold : COL.white, 1, 200, 0.8);
+    levelClear = true;
+    clearT = 2.0;
     return;
   }
   for (let i = 0; i < 8; i++) puff(e.x, e.y, i % 3 ? e.color : COL.white, 1, 90, 0.4);
+  if (e.type === 'splitter') {
+    for (let i = 0; i < 2; i++) {
+      const a = rnd(0, TAU);
+      enemies.push({ type: 'slime', x: e.x + Math.cos(a) * 10, y: e.y + Math.sin(a) * 10, r: 5.5, hp: 8, maxHp: 8, speed: 72, dmg: 3, xp: 1, color: e.color, dark: e.dark, elite: false, boss: false, flash: 0, slowT: 0, slowMul: 1, fireCd: 9, t: 0, phase: rnd(0, 6.28) });
+    }
+  }
   const n = e.elite ? 8 : 1;
   for (let i = 0; i < n; i++) {
     gems.push({
@@ -723,6 +799,12 @@ function update(dt) {
   time += dt;
   flashT = Math.max(0, flashT - dt);
   if (player.inv > 0) player.inv -= dt;
+
+  if (levelClear) {
+    clearT -= dt;
+    if (clearT <= 0) { levelClear = false; nextLevel(); }
+    return;
+  }
 
   // 移动
   let mx = 0;
@@ -819,8 +901,11 @@ function update(dt) {
     addText(player.x, player.y - 34, '精英出现！', COL.red, 13);
   }
 
-  // Boss
-  if (!bossSpawned && (time >= BOSS_TIME || (kills >= KILL_QUOTA && time >= 60))) spawnBoss();
+  // 关卡推进：Boss 关刷 Boss，普通关直接过关
+  if (!bossSpawned && (time >= BOSS_TIME || (kills >= KILL_QUOTA && time >= 60))) {
+    if (levelCfg().boss) spawnBoss();
+    else completeLevel();
+  }
 
   // 敌人
   for (let i = enemies.length - 1; i >= 0; i--) {
@@ -828,6 +913,7 @@ function update(dt) {
     if (e.dead) { enemies.splice(i, 1); continue; }
     e.t += dt;
     e.flash = Math.max(0, e.flash - dt * 6);
+    if (e.fireCd > 0) e.fireCd -= dt;
 
     if (e.boss) {
       updateBoss(e, dt);
@@ -842,6 +928,20 @@ function update(dt) {
         const nx = vx - vy * s;
         const ny = vy + vx * s;
         vx = nx; vy = ny;
+      } else if (e.type === 'shooter') {
+        if (d > 140) { /* 靠近 */ }
+        else if (d < 90) { vx = -vx; vy = -vy; }
+        else { vx = -vy * 0.7; vy = vx * 0.7; }
+        if (e.fireCd <= 0 && d < 280) {
+          e.fireCd = 1.7;
+          const bx = player.x - e.x, by = player.y - e.y;
+          const bd = Math.hypot(bx, by) || 1;
+          ebullets.push({ x: e.x, y: e.y, vx: bx / bd * 150, vy: by / bd * 150, r: 4, dmg: 6 * diff().dmg, life: 4, color: '#c75a9a' });
+        }
+      } else if (e.type === 'jumper') {
+        const hop = (e.t % 1.5) < 0.3 ? 2.5 : 0.55;
+        vx *= hop;
+        vy *= hop;
       }
       const spd = e.speed * (e.slowT > 0 ? e.slowMul : 1);
       e.x += vx * spd * dt;
@@ -1100,7 +1200,7 @@ function render() {
 }
 
 function drawGround() {
-  const tile = getPaperTile();
+  const tile = getPaperTile(currentMap);
   const x0 = Math.floor(camera.x / TILE_P) * TILE_P;
   const y0 = Math.floor(camera.y / TILE_P) * TILE_P;
   for (let x = x0; x < camera.x + VW; x += TILE_P) {
@@ -1203,6 +1303,29 @@ function drawEnemy(e) {
     ctx.beginPath(); ctx.arc(x + 4.4, y - 2.6, 1.2, 0, TAU); ctx.fill();
     ctx.beginPath(); ctx.arc(x, y + 4, 3.2, 0.2, Math.PI - 0.2);
     ctx.strokeStyle = COL.white; ctx.lineWidth = 1.4; ctx.stroke();
+  } else if (e.type === 'shooter') {
+    roughCircle(ctx, x, y, e.r, e.color, COL.ink, 2, 9);
+    const a = Math.atan2(player.y - y, player.x - x);
+    roughLine(ctx, x, y, x + Math.cos(a) * 15, y + Math.sin(a) * 15, e.dark, 3);
+    roughCircle(ctx, x - 3, y - 2, 2, COL.white, COL.ink, 1, 7);
+    roughCircle(ctx, x + 3, y - 2, 2, COL.white, COL.ink, 1, 7);
+    ctx.fillStyle = COL.ink;
+    ctx.beginPath(); ctx.arc(x - 2.7, y - 1.6, 0.9, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 3.3, y - 1.6, 0.9, 0, TAU); ctx.fill();
+  } else if (e.type === 'splitter') {
+    roughCircle(ctx, x, y, e.r, e.color, COL.ink, 2, 9);
+    roughLine(ctx, x, y - e.r, x, y + e.r, COL.ink, 1.4);
+    ctx.fillStyle = COL.white;
+    ctx.beginPath(); ctx.arc(x - 3, y - 2, 1.7, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 3, y - 2, 1.7, 0, TAU); ctx.fill();
+  } else if (e.type === 'jumper') {
+    const hop = (e.t % 1.5) < 0.3 ? -3 : 0;
+    roughEllipse(ctx, x, y + hop, e.r, e.r * 0.9, e.color, COL.ink, 2);
+    roughCircle(ctx, x - 3.4, y - 3 + hop, 2.2, COL.white, COL.ink, 1, 7);
+    roughCircle(ctx, x + 3.4, y - 3 + hop, 2.2, COL.white, COL.ink, 1, 7);
+    ctx.fillStyle = COL.ink;
+    ctx.beginPath(); ctx.arc(x - 3.2, y - 2.6 + hop, 0.9, 0, TAU); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 3.6, y - 2.6 + hop, 0.9, 0, TAU); ctx.fill();
   } else {
     // 精英：大号史莱姆 + 王冠
     const squash = 1 + Math.sin(e.t * 5) * 0.08;
@@ -1276,11 +1399,12 @@ function drawHUD() {
     text('盾 ' + Math.ceil(player.shield), 12 + hw + 10, 12, 9, COL.purple);
   }
 
-  // 时间
+  // 时间 / 关卡
   const mm = Math.floor(time / 60);
   const ss = Math.floor(time % 60);
-  text(mm + ':' + String(ss).padStart(2, '0'), VW / 2, 10, 16, COL.ink, 'center', true);
-  text('击杀 ' + kills, VW / 2, 30, 10, COL.inkSoft, 'center');
+  text(mm + ':' + String(ss).padStart(2, '0'), VW / 2, 8, 16, COL.ink, 'center', true);
+  const modeTag = runMode === 'endless' ? '无尽' : '剧情';
+  text('第 ' + (levelIdx + 1) + ' 关 · ' + currentMap.name + ' · ' + modeTag + ' · 击杀 ' + kills, VW / 2, 28, 10, COL.inkSoft, 'center');
 
   // 暂停按钮
   roughCircle(ctx, pauseBtn.x + pauseBtn.w / 2, pauseBtn.y + pauseBtn.h / 2, 14, COL.white, COL.ink, 1.6, 10);
@@ -1293,7 +1417,7 @@ function drawHUD() {
     const bw = 320;
     roughBox(ctx, (VW - bw) / 2, VH - 26, bw, 12, COL.white, COL.ink, 1.6);
     roughBox(ctx, (VW - bw) / 2 + 2, VH - 24, (bw - 4) * clamp(boss.hp / boss.maxHp, 0, 1), 8, COL.red, null, 0);
-    text('墨迹王', VW / 2, VH - 44, 10, COL.ink, 'center', true);
+    text(currentMap.boss, VW / 2, VH - 44, 10, COL.ink, 'center', true);
   }
 
   // 触屏摇杆
@@ -1309,6 +1433,13 @@ function drawHUD() {
 }
 
 function drawOverlays() {
+  if (levelClear) {
+    ctx.fillStyle = 'rgba(253,246,228,0.86)';
+    ctx.fillRect(0, 0, VW, VH);
+    text('关 卡 完 成', VW / 2, 122, 26, COL.goldDark, 'center', true, -0.02);
+    text('第 ' + (levelIdx + 1) + ' 关 · ' + currentMap.name, VW / 2, 162, 11, COL.ink, 'center');
+    return;
+  }
   if (state === 'levelup') {
     ctx.fillStyle = 'rgba(253,246,228,0.88)';
     ctx.fillRect(0, 0, VW, VH);
@@ -1343,7 +1474,7 @@ function drawOverlays() {
     text('通 关 ！', VW / 2, 92, 30, COL.goldDark, 'center', true, -0.02);
     doodleStar(ctx, VW / 2 - 90, 108, 10, COL.gold, 2.4);
     doodleStar(ctx, VW / 2 + 90, 108, 10, COL.gold, 2.4);
-    text('你击败了墨迹王', VW / 2, 142, 13, COL.ink, 'center');
+    text('剧情通关 · 已解锁无尽模式', VW / 2, 142, 13, COL.ink, 'center');
     text('存活 ' + Math.floor(time) + ' 秒 · 击杀 ' + kills + ' · 等级 ' + player.level, VW / 2, 170, 11, COL.ink, 'center');
     if (Math.floor(performance.now() / 500) % 2 === 0) {
       text('点击 / 按任意键 再来一局', VW / 2, 210, 12, COL.ink, 'center', true);
@@ -1390,9 +1521,16 @@ function drawMenu() {
     text(DIFFS[DIFF_KEYS[i]].name, r.x + r.w / 2, r.y + 6, 12, COL.ink, 'center', sel);
   }
 
-  text('WASD / 方向键移动 · 自动攻击 · P 暂停', VW / 2, 316, 10, COL.inkSoft, 'center');
-  text('活过 2 分钟或击杀 90 只，Boss 登场', VW / 2, 334, 10, COL.inkSoft, 'center');
-  text('prototype P1', VW - 10, VH - 14, 8, COL.inkSoft, 'right');
+  // 模式选择
+  for (let i = 0; i < 2; i++) {
+    const r = modeBtn(i);
+    const sel = runMode === MODE_KEYS[i];
+    roughBox(ctx, r.x, r.y, r.w, r.h, sel ? '#d9c3a0' : '#fffdf8', COL.ink, sel ? 2.2 : 1.4);
+    text(MODE_NAMES[MODE_KEYS[i]], r.x + r.w / 2, r.y + 5, 12, COL.ink, 'center', sel);
+  }
+
+  text('WASD 移动 · 自动攻击 · P 暂停', VW / 2, 344, 10, COL.inkSoft, 'center');
+  text('prototype P1.5', VW - 10, VH - 14, 8, COL.inkSoft, 'right');
 }
 
 function drawMenuSlime(x, y) {
@@ -1451,6 +1589,11 @@ window.__ps = {
   give(id) { addWeapon(id); },
   setDifficulty(k) { difficulty = k; },
   get difficulty() { return difficulty; },
+  get runMode() { return runMode; },
+  get level() { return levelIdx + 1; },
+  get currentMap() { return currentMap.name; },
+  jumpLevel(n) { levelIdx = n - 1; startLevel(); },
+  next: nextLevel,
   setEnch(id, lv) { ench[id] = lv; },
   get weapons() { return weapons; },
   forceWin() { state = 'win'; },

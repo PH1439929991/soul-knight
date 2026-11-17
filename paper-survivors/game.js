@@ -1382,7 +1382,7 @@ function drawMenu() {
   text('开始一局', VW / 2, startBtn.y + 12, 18, COL.ink, 'center', true);
 
   // 难度选择
-  text('难度', VW / 2, 252, 9, COL.inkSoft, 'center');
+  text('难度', VW / 2, 261, 9, COL.inkSoft, 'center');
   for (let i = 0; i < 3; i++) {
     const r = diffBtn(i);
     const sel = difficulty === DIFF_KEYS[i];

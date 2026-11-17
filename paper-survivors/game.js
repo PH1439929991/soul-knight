@@ -723,7 +723,7 @@ function spawnBoss() {
     color: '#b23a2c', dark: '#7a2418',
     elite: false, boss: true,
     flash: 0, t: 0, phase: 0,
-    ringCd: 2.4, chargeCd: 6, summonCd: 10,
+    atkCd: 2.0, atkIdx: 0,
     tele: 0, chargeT: 0, chargeA: 0,
   });
   addText(player.x, player.y - 40, 'BOSS 来了！', COL.red, 16);
@@ -1231,6 +1231,68 @@ function levelUpCheck() {
   levelUp();
 }
 
+// 每个 Boss 的招式序列（按地图）
+const BOSS_ATTACKS = {
+  forest:  ['charge', 'summon'],
+  waste:   ['charge', 'ring'],
+  desert:  ['burst', 'spiral'],
+  swamp:   ['ring', 'rain', 'summon'],
+  ocean:   ['burst', 'charge'],
+  volcano: ['rain', 'ring'],
+  inferno: ['summon', 'ring'],
+  heaven:  ['bolt', 'charge'],
+  four:    ['ring', 'charge', 'rain', 'summon'],
+};
+
+function bossAttackList() {
+  return BOSS_ATTACKS[currentMap.id] || ['ring'];
+}
+
+function bossBullet(e, a, spd, r, dmg, life) {
+  ebullets.push({
+    x: e.x + Math.cos(a) * 16,
+    y: e.y + Math.sin(a) * 16,
+    vx: Math.cos(a) * spd,
+    vy: Math.sin(a) * spd,
+    r, dmg, life,
+    color: currentMap.doodle,
+  });
+}
+
+function doBossAttack(e, atk, dx, dy) {
+  const base = Math.atan2(dy, dx);
+  if (atk === 'ring') {
+    const n = 14;
+    for (let i = 0; i < n; i++) bossBullet(e, (i / n) * TAU + e.t, 105, 5, 10, 5);
+  } else if (atk === 'burst') {
+    for (let i = 0; i < 5; i++) bossBullet(e, base + (i - 2) * 0.17, 175, 4.5, 9, 4);
+  } else if (atk === 'spiral') {
+    for (let k = 0; k < 2; k++) {
+      for (let i = 0; i < 10; i++) bossBullet(e, (i / 10) * TAU + e.t * 2 + k * 0.31, 115, 4, 8, 5);
+    }
+  } else if (atk === 'summon') {
+    for (let i = 0; i < 3; i++) spawnEnemy('slime');
+  } else if (atk === 'rain') {
+    for (let i = 0; i < 3; i++) {
+      const a = rnd(0, TAU);
+      const dd = rnd(0, 90);
+      hazards.push({
+        kind: 'zone',
+        x: clamp(player.x + Math.cos(a) * dd, 40, WORLD.w - 40),
+        y: clamp(player.y + Math.sin(a) * dd, 40, WORLD.h - 40),
+        r: 34, t: 0, delay: 1.0, dmgE: 40, dmgP: 12, color: currentMap.doodle,
+      });
+    }
+  } else if (atk === 'bolt') {
+    hazards.push({
+      kind: 'bolt', x: player.x, y: player.y, r: 26, t: 0, delay: 0.5,
+      dmgE: 90, dmgP: 12, color: currentMap.doodle,
+    });
+  } else if (atk === 'charge') {
+    e.tele = 0.6;
+  }
+}
+
 function updateBoss(e, dt) {
   const dx = player.x - e.x;
   const dy = player.y - e.y;
@@ -1250,36 +1312,21 @@ function updateBoss(e, dt) {
     e.y += Math.sin(e.chargeA) * 420 * dt;
     e.x = clamp(e.x, 20, WORLD.w - 20);
     e.y = clamp(e.y, 20, WORLD.h - 20);
-    for (let i = 0; i < 2; i++) puff(e.x, e.y, '#8f2f24', 1, 50, 0.2);
+    for (let i = 0; i < 2; i++) puff(e.x, e.y, currentMap.doodle, 1, 50, 0.2);
     return;
   }
 
   e.x += (dx / d) * e.speed * dt;
   e.y += (dy / d) * e.speed * dt;
 
-  e.ringCd -= dt;
-  e.chargeCd -= dt;
-  e.summonCd -= dt;
-
-  if (e.ringCd <= 0) {
-    e.ringCd = 2.6;
-    const n = 14;
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * TAU + e.t;
-      ebullets.push({
-        x: e.x, y: e.y,
-        vx: Math.cos(a) * 105, vy: Math.sin(a) * 105,
-        r: 5, dmg: 10, life: 5, color: '#b23a2c',
-      });
-    }
-  }
-  if (e.chargeCd <= 0) {
-    e.chargeCd = 7;
-    e.tele = 0.7;
-  }
-  if (e.summonCd <= 0) {
-    e.summonCd = 11;
-    for (let i = 0; i < 3; i++) spawnEnemy('slime');
+  e.atkCd -= dt;
+  if (e.atkCd <= 0) {
+    const list = bossAttackList();
+    const atk = list[e.atkIdx % list.length];
+    e.atkIdx++;
+    e.atkCd = atk === 'charge' ? 2.8 : 2.4;
+    addText(e.x, e.y - e.r - 12, { ring: '弹幕', burst: '连射', spiral: '螺旋', summon: '召唤', rain: '落火', bolt: '天雷', charge: '冲撞' }[atk] || '', currentMap.doodle, 9);
+    doBossAttack(e, atk, dx, dy);
   }
 }
 

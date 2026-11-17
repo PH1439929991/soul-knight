@@ -12,6 +12,9 @@
 
 ## 运行
 
+> 交接/开发说明见 [HANDOFF.md](HANDOFF.md)（代码结构、调参位置、待办）。
+
+
 ```bash
 cd paper-survivors
 python3 -m http.server 8080

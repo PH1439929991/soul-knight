@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d0f16">
+<title>元气地牢 · 最小原型</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: #0d0f16; overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; touch-action: none; image-rendering: pixelated; image-rendering: crisp-edges; }
+  /* 竖屏提示：只在手机窄屏显示 */
+  #rotate {
+    position: fixed; left: 50%; top: 10px; transform: translateX(-50%);
+    color: #f2c14e; font: 12px/1.6 "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: rgba(0,0,0,.55); border: 1px solid rgba(242,193,78,.35);
+    padding: 4px 10px; border-radius: 999px; pointer-events: none;
+    display: none; white-space: nowrap;
+  }
+  @media (orientation: portrait) and (max-width: 820px) {
+    #rotate { display: block; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="rotate">建议横屏游玩 · 双摇杆操作</div>
+  <script src="game.js"></script>
+</body>
+</html>

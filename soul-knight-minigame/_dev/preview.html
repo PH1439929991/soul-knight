@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>小游戏适配层预览（仅开发用）</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; touch-action: none; }
+</style>
+</head>
+<body>
+<script>
+/*
+ * 这个页面不是小游戏，只是用浏览器模拟 wx 环境，
+ * 用来验证 src/shim.js 是否能把 Web 版 game.js 跑起来。
+ */
+(function () {
+  var rawCreate = document.createElement.bind(document);
+
+  var created = 0;
+  var screenCanvas = rawCreate('canvas');
+  screenCanvas.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;display:block';
+  document.body.appendChild(screenCanvas);
+
+  var dpr = window.devicePixelRatio || 1;
+  screenCanvas.width = Math.round(window.innerWidth * dpr);
+  screenCanvas.height = Math.round(window.innerHeight * dpr);
+
+  var handlers = {};
+
+  window.wx = {
+    getSystemInfoSync: function () {
+      return {
+        windowWidth: window.innerWidth,
+        windowHeight: window.innerHeight,
+        pixelRatio: dpr,
+        screenWidth: window.innerWidth,
+        screenHeight: window.innerHeight,
+      };
+    },
+    createCanvas: function () {
+      if (created++ === 0) return screenCanvas;
+      return rawCreate('canvas');
+    },
+    onTouchStart: function (fn) { handlers.start = fn; },
+    onTouchMove: function (fn) { handlers.move = fn; },
+    onTouchEnd: function (fn) { handlers.end = fn; },
+    onTouchCancel: function (fn) { handlers.cancel = fn; },
+    getStorageSync: function () { return ''; },
+    setStorageSync: function () {},
+    onHide: function () {},
+    onShow: function () {},
+  };
+
+  function evt(id, x, y) { return { identifier: id, clientX: x, clientY: y }; }
+
+  window.__devDispatch = function (kind, list) {
+    var h = handlers[kind];
+    if (h) h({ touches: list, changedTouches: list });
+  };
+  window.__devEvt = evt;
+
+  // 鼠标 → 触摸
+  var down = false;
+  screenCanvas.addEventListener('mousedown', function (e) {
+    down = true;
+    __devDispatch('start', [evt(1, e.clientX, e.clientY)]);
+  });
+  screenCanvas.addEventListener('mousemove', function (e) {
+    if (down) __devDispatch('move', [evt(1, e.clientX, e.clientY)]);
+  });
+  window.addEventListener('mouseup', function (e) {
+    if (!down) return;
+    down = false;
+    __devDispatch('end', [evt(1, e.clientX, e.clientY)]);
+  });
+})();
+</script>
+
+<script src="../src/shim.js"></script>
+<script src="../src/game.js"></script>
+
+<script>
+// 让画布的 CSS 尺寸严格等于「适配层布局尺寸 / dpr」，保证预览不被浏览器二次拉伸
+(function () {
+  var L = window.__skLayout();
+  var c = document.querySelector('canvas');
+  c.style.width = (L.width / L.dpr) + 'px';
+  c.style.height = (L.height / L.dpr) + 'px';
+})();
+
+// 自动开一局并按住双摇杆，方便截图检查（仅开发用）
+setTimeout(function () {
+  var L = window.__skLayout();
+  var w = L.width / L.dpr;
+  var h = L.height / L.dpr;
+  var ox = L.offsetX / L.dpr;
+  var oy = L.offsetY / L.dpr;
+  __devDispatch('start', [__devEvt(1, ox + w / 2, oy + h / 2)]);
+  __devDispatch('end', [__devEvt(1, ox + w / 2, oy + h / 2)]);
+  setTimeout(function () {
+    __devDispatch('start', [__devEvt(2, ox + w * 0.15, oy + h * 0.8)]);
+    __devDispatch('move', [__devEvt(2, ox + w * 0.15 + 40, oy + h * 0.8 - 10)]);
+    __devDispatch('start', [__devEvt(3, ox + w * 0.85, oy + h * 0.8)]);
+    __devDispatch('move', [__devEvt(3, ox + w * 0.85 - 38, oy + h * 0.8 - 26)]);
+  }, 400);
+}, 500);
+</script>
+</body>
+</html>

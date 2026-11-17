@@ -1,0 +1,11 @@
+# 仓库只跟踪下面两个项目，工作区里的其它文件一律忽略
+/*
+!/.gitignore
+!/README.md
+!/soul-knight-proto/
+!/soul-knight-minigame/
+
+# 构建产物 & 系统文件
+/soul-knight-proto/dist/
+.wrangler/
+.DS_Store

@@ -1,0 +1,20 @@
+{
+  "description": "元气地牢 · 微信小游戏版（Canvas 裸写）",
+  "packOptions": {
+    "ignore": [
+      { "type": "folder", "value": "_dev" }
+    ]
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": false,
+    "enhance": false,
+    "postcss": false,
+    "minified": false
+  },
+  "compileType": "game",
+  "libVersion": "3.0.0",
+  "appid": "touristappid",
+  "projectname": "soul-knight-minigame",
+  "condition": {}
+}

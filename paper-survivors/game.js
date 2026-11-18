@@ -2509,7 +2509,7 @@ function update(dt) {
             for (const e of enemies) {
               if (!e.dead && dist(player, e) < def.pulseRange + e.r) damageEnemy(e, pulseDmg);
             }
-            slashes.push({ x: player.x, y: player.y, aim: 0, arc: TAU, life: 0.34 + pulse * 0.08, max: 0.34 + pulse * 0.08, color: def.color, r: def.pulseRange + pulse * 10, crit: false, weaponId: 'bubblePulse', blades: 1 });
+            slashes.push({ x: player.x, y: player.y, aim: 0, arc: TAU, life: 0.34 + pulse * 0.08, max: 0.34 + pulse * 0.08, color: def.color, r: def.pulseRange + pulse * 10, crit: false, weaponId: 'bubblePulse', blades: 1, form: w.level });
           }
         }
       }
@@ -3118,22 +3118,34 @@ function render() {
     for (const sl of slashes) {
       const p = clamp(1 - sl.life / sl.max, 0, 1);
       const alpha = Math.sin(p * Math.PI);
+      const form = clamp(sl.form || 1, 1, WEAPON_MAX_LEVEL);
+      const visualTier = weaponVisualTier(form);
       if (sl.weaponId === 'compass' || sl.weaponId === 'bubblePulse') {
         ctx.save();
-        ctx.globalAlpha = alpha * 0.25;
-        ctx.strokeStyle = sl.weaponId === 'bubblePulse' ? '#d9fbff' : '#eadcf3';
-        ctx.lineWidth = 14;
+        ctx.globalAlpha = alpha * (visualTier === 2 ? 0.38 : 0.25);
+        ctx.strokeStyle = visualTier === 2 ? '#fff0a6' : (sl.weaponId === 'bubblePulse' ? '#d9fbff' : '#eadcf3');
+        ctx.lineWidth = visualTier === 2 ? 20 : visualTier === 1 ? 16 : 14;
         ctx.beginPath(); ctx.arc(sl.x, sl.y, sl.r * (0.62 + p * 0.25), 0, TAU); ctx.stroke();
         ctx.globalAlpha = alpha * 0.9;
-        ctx.strokeStyle = sl.crit ? COL.gold : sl.color;
-        ctx.lineWidth = 6;
+        ctx.strokeStyle = sl.crit || visualTier === 2 ? COL.gold : sl.color;
+        ctx.lineWidth = visualTier === 2 ? 8 : visualTier === 1 ? 7 : 6;
         ctx.beginPath(); ctx.arc(sl.x, sl.y, sl.r * (0.62 + p * 0.25), 0, TAU); ctx.stroke();
         const blades = sl.weaponId === 'bubblePulse' ? 6 : (sl.blades || 1);
         for (let i = 0; i < blades; i++) {
           const a = sl.aim + p * 2.6 + i * TAU / blades;
           const rr = sl.r * (0.62 + p * 0.25);
-          if (sl.weaponId === 'bubblePulse') roughCircle(ctx, sl.x + Math.cos(a) * rr, sl.y + Math.sin(a) * rr, 4, '#e7ffff', sl.color, 1, 7);
-          else roughLine(ctx, sl.x + Math.cos(a) * (rr - 10), sl.y + Math.sin(a) * (rr - 10), sl.x + Math.cos(a) * (rr + 8), sl.y + Math.sin(a) * (rr + 8), '#fffdf8', 2);
+          if (sl.weaponId === 'bubblePulse') {
+            if (visualTier === 2) doodleStar(ctx, sl.x + Math.cos(a) * rr, sl.y + Math.sin(a) * rr, 5, COL.gold, 1.2);
+            else roughCircle(ctx, sl.x + Math.cos(a) * rr, sl.y + Math.sin(a) * rr, visualTier === 1 ? 5 : 4, '#e7ffff', sl.color, 1, 7);
+          } else {
+            roughLine(ctx, sl.x + Math.cos(a) * (rr - 10), sl.y + Math.sin(a) * (rr - 10), sl.x + Math.cos(a) * (rr + (visualTier === 2 ? 12 : 8)), sl.y + Math.sin(a) * (rr + (visualTier === 2 ? 12 : 8)), visualTier === 2 ? '#fff0a6' : '#fffdf8', visualTier === 2 ? 3 : 2);
+          }
+        }
+        if (visualTier === 2) {
+          ctx.globalAlpha = alpha * 0.62;
+          ctx.setLineDash([5, 6]);
+          ctx.beginPath(); ctx.arc(sl.x, sl.y, sl.r * (0.48 + p * 0.22), 0, TAU); ctx.stroke();
+          ctx.setLineDash([]);
         }
         ctx.restore();
         continue;
@@ -3143,15 +3155,15 @@ function render() {
       const radius = sl.r * (0.74 + p * 0.12);
       ctx.save();
       ctx.globalAlpha = alpha * 0.28;
-      ctx.strokeStyle = sl.crit ? '#fff0a6' : '#dceff2';
-      ctx.lineWidth = sl.crit ? 18 : 14;
+      ctx.strokeStyle = sl.crit || visualTier === 2 ? '#fff0a6' : '#dceff2';
+      ctx.lineWidth = sl.crit || visualTier === 2 ? 18 : visualTier === 1 ? 16 : 14;
       ctx.beginPath();
       ctx.arc(sl.x, sl.y, radius, lead, tail);
       ctx.stroke();
 
       ctx.globalAlpha = alpha * 0.92;
-      ctx.strokeStyle = sl.crit ? COL.gold : sl.color;
-      ctx.lineWidth = sl.crit ? 9 : 7;
+      ctx.strokeStyle = sl.crit || visualTier === 2 ? COL.gold : sl.color;
+      ctx.lineWidth = sl.crit || visualTier === 2 ? 9 : visualTier === 1 ? 8 : 7;
       ctx.beginPath();
       ctx.arc(sl.x, sl.y, radius, lead, tail);
       ctx.stroke();
@@ -3161,6 +3173,22 @@ function render() {
       ctx.beginPath();
       ctx.arc(sl.x, sl.y, radius - 3, lead + 0.04, tail - 0.04);
       ctx.stroke();
+
+      if (visualTier >= 1) {
+        ctx.globalAlpha = alpha * (visualTier === 2 ? 0.82 : 0.52);
+        ctx.strokeStyle = visualTier === 2 ? '#fff0a6' : sl.color;
+        ctx.lineWidth = visualTier === 2 ? 2.6 : 1.5;
+        const extraRadius = radius + (visualTier === 2 ? 10 : 6);
+        ctx.beginPath();
+        ctx.arc(sl.x, sl.y, extraRadius, lead + 0.08, tail - 0.12);
+        ctx.stroke();
+        if (visualTier === 2) {
+          for (let i = 0; i < 3; i++) {
+            const starA = lead + (tail - lead) * (0.22 + i * 0.28);
+            doodleStar(ctx, sl.x + Math.cos(starA) * extraRadius, sl.y + Math.sin(starA) * extraRadius, 3.2, COL.gold, 0.9);
+          }
+        }
+      }
 
       const tipX = sl.x + Math.cos(tail) * radius;
       const tipY = sl.y + Math.sin(tail) * radius;
@@ -4164,8 +4192,25 @@ function drawPlayer() {
   const p = player;
   const blink = p.inv > 0 && Math.floor(p.inv * 16) % 2 === 0;
   const idleBob = 0;
+  const shieldWeapon = weapons.find((w) => w.id === 'bubble');
   if (p.shield > 0) {
-    roughCircle(ctx, p.x, p.y + idleBob, 17, 'rgba(139,95,192,0.08)', 'rgba(139,95,192,0.7)', 2, 14);
+    const shieldLevel = shieldWeapon ? shieldWeapon.level : 1;
+    roughCircle(ctx, p.x, p.y + idleBob, 17 + (shieldLevel >= 3 ? 2 : 0), 'rgba(139,95,192,0.08)', shieldLevel >= 6 ? '#d7a838' : 'rgba(139,95,192,0.7)', shieldLevel >= 6 ? 2.8 : 2, 14);
+    if (shieldLevel >= 3) {
+      ctx.save();
+      ctx.globalAlpha = shieldLevel >= 6 ? 0.82 : 0.5;
+      ctx.setLineDash(shieldLevel >= 6 ? [2, 3] : [5, 4]);
+      roughCircle(ctx, p.x, p.y + idleBob, shieldLevel >= 6 ? 23 : 21, null, shieldLevel >= 6 ? COL.gold : '#b08bd2', shieldLevel >= 6 ? 1.8 : 1.2, 14);
+      ctx.setLineDash([]);
+      const runes = shieldLevel >= 6 ? 6 : 3;
+      for (let i = 0; i < runes; i++) {
+        const a = performance.now() / (shieldLevel >= 6 ? 780 : 1200) + i * TAU / runes;
+        const rr = shieldLevel >= 6 ? 23 : 21;
+        if (shieldLevel >= 6) doodleStar(ctx, p.x + Math.cos(a) * rr, p.y + idleBob + Math.sin(a) * rr, 2.5, COL.gold, 0.8);
+        else roughCircle(ctx, p.x + Math.cos(a) * rr, p.y + idleBob + Math.sin(a) * rr, 1.8, '#f0e3ff', COL.purple, 0.5, 6);
+      }
+      ctx.restore();
+    }
   }
   if (p.ward > 0) {
     const ratio = p.wardMax > 0 ? p.ward / p.wardMax : 0;
@@ -4181,6 +4226,16 @@ function drawPlayer() {
     ctx.restore();
   }
   drawPencilHeroArt(p.x, p.y + idleBob, 1, p.aim, blink ? 0.4 : 1);
+  const signature = weapons.reduce((best, w) => !best || w.level > best.level ? w : best, null);
+  if (signature) {
+    const heldDist = signature.level >= 6 ? 24 : 21;
+    const heldX = p.x + Math.cos(p.aim) * heldDist;
+    const heldY = p.y + idleBob + Math.sin(p.aim) * heldDist;
+    ctx.save();
+    ctx.globalAlpha = blink ? 0.45 : 0.96;
+    drawWeaponIcon(signature.id, heldX, heldY, signature.level >= 6 ? 10 : 8.5, signature.level);
+    ctx.restore();
+  }
   const nameW = clamp(measure(playerName, 7, true) + 18, 42, 92);
   const nameX = p.x - nameW / 2;
   const nameY = p.y + idleBob - 35;
@@ -4779,9 +4834,20 @@ function drawGem(g) {
 
 function drawBullet(b, color) {
   const a = Math.atan2(b.vy, b.vx);
-  const trail = b.crit ? 0.034 : 0.022;
-  ctx.strokeStyle = b.crit ? '#ffe28a' : color;
-  ctx.lineWidth = b.crit ? 5 : 3;
+  const form = clamp(b.form || 1, 1, WEAPON_MAX_LEVEL);
+  const tier = weaponVisualTier(form);
+  const trail = b.crit ? 0.034 : tier === 2 ? 0.04 : tier === 1 ? 0.03 : 0.022;
+  if (tier === 2 && b.weaponId && !b.weaponId.startsWith('enemy')) {
+    ctx.strokeStyle = 'rgba(245,197,66,0.24)';
+    ctx.lineWidth = 9;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(b.x - b.vx * trail * 1.2, b.y - b.vy * trail * 1.2);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = b.crit || tier === 2 ? '#ffe28a' : color;
+  ctx.lineWidth = b.crit ? 5 : tier === 2 ? 4.2 : tier === 1 ? 3.5 : 3;
   ctx.lineCap = 'round';
   ctx.beginPath();
   ctx.moveTo(b.x - b.vx * trail, b.y - b.vy * trail);
@@ -4792,33 +4858,49 @@ function drawBullet(b, color) {
     ctx.save();
     ctx.translate(b.x, b.y);
     ctx.rotate(a);
-    fillPoly(ctx, [[-6, -2.1], [3, -2.1], [7, 0], [3, 2.1], [-6, 2.1]], b.crit ? '#ffd45c' : '#e6aa32');
-    strokePoly(ctx, [[-6, -2.1], [3, -2.1], [7, 0], [3, 2.1], [-6, 2.1]], COL.ink, 0.9);
-    fillPoly(ctx, [[3, -2.1], [8, 0], [3, 2.1]], '#f4d8a6');
-    fillPoly(ctx, [[6.2, -0.7], [8.8, 0], [6.2, 0.7]], COL.ink);
+    const len = tier === 2 ? 11 : tier === 1 ? 9 : 7;
+    fillPoly(ctx, [[-len, -2.3], [3, -2.3], [len, 0], [3, 2.3], [-len, 2.3]], b.crit || tier === 2 ? '#ffd45c' : tier === 1 ? '#5b9fa9' : '#e6aa32');
+    strokePoly(ctx, [[-len, -2.3], [3, -2.3], [len, 0], [3, 2.3], [-len, 2.3]], COL.ink, 0.9);
+    if (tier >= 1) roughLine(ctx, -len + 2, 0, 4, 0, '#fffdf8', 0.9);
+    fillPoly(ctx, [[3, -2.3], [len + 2, 0], [3, 2.3]], tier === 2 ? '#fff0bd' : '#f4d8a6');
+    fillPoly(ctx, [[len - 1, -0.75], [len + 2.8, 0], [len - 1, 0.75]], tier === 2 ? COL.goldDark : COL.ink);
+    if (tier === 2) doodleStar(ctx, -5, 0, 2.2, '#fff0a6', 0.7);
     ctx.restore();
   } else if (b.weaponId === 'slingshot') {
-    roughCircle(ctx, b.x, b.y, b.crit ? 5 : 3.8, b.crit ? '#ffd45c' : '#789b55', COL.ink, 1, 8);
+    if (tier === 2) doodleStar(ctx, b.x, b.y, b.crit ? 7 : 5.8, '#ffd45c', 1.4);
+    else roughCircle(ctx, b.x, b.y, b.crit ? 5 : tier === 1 ? 4.5 : 3.8, b.crit ? '#ffd45c' : tier === 1 ? '#75c8d2' : '#789b55', COL.ink, 1, 8);
     roughLine(ctx, b.x - Math.cos(a) * 9 - Math.sin(a) * 3, b.y - Math.sin(a) * 9 + Math.cos(a) * 3, b.x - Math.cos(a) * 5, b.y - Math.sin(a) * 5, tint(color, 0.6), 1);
   } else if (b.weaponId === 'ruler') {
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a);
-    roughBox(ctx, -15, -3, 30, 6, '#b8dce0', COL.ink, 1);
-    for (let i = -10; i <= 10; i += 5) roughLine(ctx, i, -2, i, i % 10 === 0 ? 2 : 0, '#4c7880', 0.7);
+    const rulerLen = tier === 2 ? 42 : tier === 1 ? 36 : 30;
+    roughBox(ctx, -rulerLen / 2, tier === 2 ? -4 : -3, rulerLen, tier === 2 ? 8 : 6, tier === 2 ? '#ead27a' : tier === 1 ? '#9fd2d8' : '#b8dce0', COL.ink, 1);
+    for (let i = -rulerLen / 2 + 5; i <= rulerLen / 2 - 4; i += 5) roughLine(ctx, i, tier === 2 ? -3 : -2, i, i % 10 === 0 ? 2 : 0, tier === 2 ? '#755e1f' : '#4c7880', 0.7);
+    if (tier === 2) fillPoly(ctx, [[rulerLen / 2, -4], [rulerLen / 2 + 5, 0], [rulerLen / 2, 4]], COL.gold);
     ctx.restore();
   } else if (b.weaponId === 'crayon') {
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a);
-    roughBox(ctx, -8, -3, 14, 6, color, COL.ink, 1);
-    fillPoly(ctx, [[6, -3], [12, 0], [6, 3]], tint(color, 1.2));
+    if (tier >= 1) {
+      roughLine(ctx, -15, -4, -6, -4, tier === 2 ? COL.gold : '#75c8d2', 1.4);
+      roughLine(ctx, -15, 4, -6, 4, tier === 2 ? '#d96672' : '#8a6ab0', 1.4);
+    }
+    roughBox(ctx, tier === 2 ? -10 : -8, tier === 2 ? -4 : -3, tier === 2 ? 18 : 14, tier === 2 ? 8 : 6, tier === 2 ? COL.goldDark : color, COL.ink, 1);
+    fillPoly(ctx, [[tier === 2 ? 8 : 6, tier === 2 ? -4 : -3], [tier === 2 ? 15 : 12, 0], [tier === 2 ? 8 : 6, tier === 2 ? 4 : 3]], tier === 2 ? '#fff0a6' : tint(color, 1));
     ctx.restore();
   } else if (b.weaponId === 'boomerang') {
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(performance.now() / 75);
-    fillPoly(ctx, [[-11, -3], [-2, 0], [2, 10], [7, 7], [5, -3], [11, -8], [6, -11], [0, -5]], b.crit ? COL.gold : color);
-    strokePoly(ctx, [[-11, -3], [-2, 0], [2, 10], [7, 7], [5, -3], [11, -8], [6, -11], [0, -5]], COL.ink, 1.1);
+    const wing = [[-11, -3], [-2, 0], [2, 10], [7, 7], [5, -3], [11, -8], [6, -11], [0, -5]];
+    if (tier >= 1) { ctx.save(); ctx.rotate(tier === 2 ? Math.PI / 2 : Math.PI); fillPoly(ctx, wing, tier === 2 ? COL.gold : '#aa8fc7'); strokePoly(ctx, wing, COL.ink, 0.9); ctx.restore(); }
+    fillPoly(ctx, wing, b.crit || tier === 2 ? COL.gold : color);
+    strokePoly(ctx, wing, COL.ink, 1.1);
+    roughCircle(ctx, 0, 0, tier === 2 ? 3.5 : 2.4, tier === 2 ? '#fff0a6' : '#d8c9e8', COL.ink, 0.7, 7);
     ctx.restore();
   } else if (b.weaponId === 'eraser') {
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a + 0.25);
-    roughBox(ctx, -7, -5, 14, 10, '#ef9db1', COL.ink, 1.2);
-    roughLine(ctx, -2, -5, -2, 5, '#fff0dd', 2);
+    const ew = tier === 2 ? 20 : tier === 1 ? 17 : 14;
+    const eh = tier === 2 ? 14 : tier === 1 ? 12 : 10;
+    roughBox(ctx, -ew / 2, -eh / 2, ew, eh, tier === 2 ? '#e7a86d' : '#ef9db1', COL.ink, 1.2);
+    roughLine(ctx, -2, -eh / 2, -2, eh / 2, tier === 2 ? COL.gold : '#fff0dd', tier === 2 ? 3 : 2);
+    if (tier === 2) doodleStar(ctx, 4, 0, 2.6, '#fff0a6', 0.7);
     ctx.restore();
   } else if (b.weaponId === 'enemyInk') {
     roughCircle(ctx, b.x, b.y, b.r + 2, 'rgba(199,90,154,0.16)', null, 0, 9);
@@ -4848,12 +4930,12 @@ function drawBullet(b, color) {
     roughCircle(ctx, b.x, b.y, b.r, b.crit ? COL.gold : color, COL.ink, 1, 7);
   }
 
-  if (b.form >= 2 && b.weaponId && !b.weaponId.startsWith('enemy') && b.weaponId !== 'bossOrb') {
+  if (form >= 2 && b.weaponId && !b.weaponId.startsWith('enemy') && b.weaponId !== 'bossOrb') {
     ctx.save();
-    ctx.globalAlpha = 0.28 + Math.min(0.35, b.form * 0.05);
-    if (b.form >= 6) doodleStar(ctx, b.x, b.y, b.r + 8, b.crit ? '#fff0a6' : color, 1.5);
-    else if (b.form >= 4) roughCircle(ctx, b.x, b.y, b.r + 4 + b.form, null, color, 1, 8);
-    else roughLine(ctx, b.x - Math.cos(a) * (11 + b.form * 2), b.y - Math.sin(a) * (11 + b.form * 2), b.x - Math.cos(a) * 4, b.y - Math.sin(a) * 4, '#fffdf8', 1.4);
+    ctx.globalAlpha = 0.28 + Math.min(0.35, form * 0.05);
+    if (form >= 6) doodleStar(ctx, b.x, b.y, (b.r || 4) + 8, b.crit ? '#fff0a6' : COL.gold, 1.5);
+    else if (form >= 4) roughCircle(ctx, b.x, b.y, (b.r || 4) + 4 + form, null, color, 1, 8);
+    else roughLine(ctx, b.x - Math.cos(a) * (11 + form * 2), b.y - Math.sin(a) * (11 + form * 2), b.x - Math.cos(a) * 4, b.y - Math.sin(a) * 4, '#fffdf8', 1.4);
     ctx.restore();
   }
 
@@ -4871,42 +4953,167 @@ function drawShieldIcon(x, y, s, color) {
   strokePoly(ctx, [[x, y - s], [x + s * 0.8, y - s * 0.55], [x + s * 0.62, y + s * 0.55], [x, y + s], [x - s * 0.62, y + s * 0.55], [x - s * 0.8, y - s * 0.55]], COL.ink, 1.2);
 }
 
-function drawWeaponIcon(id, x, y, s) {
+function weaponVisualTier(level) {
+  return level >= WEAPON_MAX_LEVEL ? 2 : level >= WEAPON_EVOLVE_LEVEL ? 1 : 0;
+}
+
+function drawWeaponEvolutionAura(level, color) {
+  const tier = weaponVisualTier(level);
+  if (tier === 0) {
+    if (level >= 2) {
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      roughLine(ctx, -12, -8, -8, -12, shade(color, 0.2), 1.2);
+      roughLine(ctx, 8, 12, 12, 8, shade(color, 0.2), 1.2);
+      ctx.restore();
+    }
+    return;
+  }
+  const t = performance.now() / 1000;
+  ctx.save();
+  ctx.globalAlpha = tier === 2 ? 0.5 : 0.28;
+  ctx.setLineDash(tier === 2 ? [2, 3] : [5, 4]);
+  const auraR = tier === 2 ? 15.8 : 13.4 + level * 0.35;
+  roughCircle(ctx, 0, 0, auraR, null, tier === 2 ? COL.goldDark : color, tier === 2 ? 1.7 : 1.1 + (level - 3) * 0.18, 12);
+  ctx.setLineDash([]);
+  const count = level;
+  for (let i = 0; i < count; i++) {
+    const a = t * (tier === 2 ? 0.72 : 0.42) + i * TAU / count;
+    const px = Math.cos(a) * (auraR + 0.7);
+    const py = Math.sin(a) * (auraR + 0.7);
+    if (tier === 2) doodleStar(ctx, px, py, 1.9, COL.gold, 0.7);
+    else roughCircle(ctx, px, py, 1.3, shade(color, 0.35), color, 0.45, 6);
+  }
+  ctx.restore();
+}
+
+function drawWeaponIcon(id, x, y, s, level) {
+  const lv = clamp(level || 1, 1, WEAPON_MAX_LEVEL);
+  const tier = weaponVisualTier(lv);
+  const def = WEAPON_DEFS[id];
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(s / 16, s / 16);
+  drawWeaponEvolutionAura(lv, def ? def.color : COL.goldDark);
   if (id === 'pencil') {
     ctx.rotate(-0.55);
-    fillPoly(ctx, [[-11, -3], [7, -3], [12, 0], [7, 3], [-11, 3]], COL.ochre);
-    strokePoly(ctx, [[-11, -3], [7, -3], [12, 0], [7, 3], [-11, 3]], COL.ink, 1.5);
-    fillPoly(ctx, [[7, -3], [14, 0], [7, 3]], '#f4d8a6');
-    fillPoly(ctx, [[12, -1.2], [15, 0], [12, 1.2]], COL.ink);
+    if (tier >= 1) {
+      fillPoly(ctx, [[-8, -3], [-13, -8], [-2, -4], [-2, 4], [-13, 8], [-8, 3]], tier === 2 ? COL.gold : COL.blue);
+      strokePoly(ctx, [[-8, -3], [-13, -8], [-2, -4], [-2, 4], [-13, 8], [-8, 3]], COL.ink, 1);
+    }
+    if (lv >= 5 && tier === 1) {
+      fillPoly(ctx, [[-7, -3], [-14, -11], [-1, -5]], '#75c8d2');
+      fillPoly(ctx, [[-7, 3], [-14, 11], [-1, 5]], '#5b9fa9');
+    }
+    const body = tier === 2 ? '#d7a838' : tier === 1 ? '#4f8cad' : COL.ochre;
+    const rear = -11 - Math.min(2.5, (lv - 1) * 0.5);
+    fillPoly(ctx, [[rear, -3.4], [7, -3.4], [12, 0], [7, 3.4], [rear, 3.4]], body);
+    strokePoly(ctx, [[rear, -3.4], [7, -3.4], [12, 0], [7, 3.4], [rear, 3.4]], COL.ink, 1.5);
+    if (lv >= 2) roughLine(ctx, rear + 3, -3, rear + 3, 3, lv >= 4 ? '#d8f1f5' : '#8a5b2c', 1.1);
+    if (tier >= 1) roughLine(ctx, -6, 0, 7, 0, tier === 2 ? '#fff0a6' : '#d8f1f5', 1.2);
+    fillPoly(ctx, [[7, -3.4], [tier === 2 ? 16 : 14, 0], [7, 3.4]], tier === 2 ? '#f8e7bb' : '#f4d8a6');
+    fillPoly(ctx, [[tier === 2 ? 13.5 : 12, -1.25], [tier === 2 ? 17 : 15, 0], [tier === 2 ? 13.5 : 12, 1.25]], tier === 2 ? '#6a5421' : COL.ink);
+    if (tier === 2) doodleStar(ctx, -7, 0, 2.5, '#fff0a6', 0.8);
   } else if (id === 'slingshot') {
-    roughLine(ctx, 0, 10, -1, -2, '#8f5d34', 4);
-    roughLine(ctx, -1, -2, -8, -10, '#8f5d34', 4);
-    roughLine(ctx, -1, -2, 8, -10, '#8f5d34', 4);
-    roughLine(ctx, -8, -10, 8, -10, COL.red, 1.6);
+    const frame = tier === 2 ? COL.goldDark : tier === 1 ? '#477f8d' : '#8f5d34';
+    roughLine(ctx, 0, 11, -1, -2, frame, tier === 2 ? 5 : 4);
+    roughLine(ctx, -1, -2, tier >= 1 ? -10 : -8, tier === 2 ? -12 : -10, frame, tier === 2 ? 5 : 4);
+    roughLine(ctx, -1, -2, tier >= 1 ? 10 : 8, tier === 2 ? -12 : -10, frame, tier === 2 ? 5 : 4);
+    if (tier >= 1) {
+      fillPoly(ctx, [[-10, -12], [-15, -8], [-9, -6]], tier === 2 ? COL.gold : COL.blue);
+      fillPoly(ctx, [[10, -12], [15, -8], [9, -6]], tier === 2 ? COL.gold : COL.blue);
+      roughCircle(ctx, -1, -2, tier === 2 ? 4 : 3.3, tier === 2 ? '#fff0a6' : '#9de0e5', COL.ink, 1, 8);
+      if (lv >= 5 && tier === 1) {
+        fillPoly(ctx, [[-7, -9], [-14, -15], [-10, -5]], '#75c8d2');
+        fillPoly(ctx, [[7, -9], [14, -15], [10, -5]], '#75c8d2');
+      }
+    }
+    if (lv >= 2 && tier === 0) roughLine(ctx, -4, 4, 3, 4, '#d6b274', 2);
+    roughLine(ctx, tier >= 1 ? -10 : -8, tier === 2 ? -12 : -10, tier >= 1 ? 10 : 8, tier === 2 ? -12 : -10, tier === 2 ? COL.gold : COL.red, tier === 2 ? 2.5 : 1.6);
   } else if (id === 'knife') {
     ctx.rotate(-0.55);
-    fillPoly(ctx, [[-12, -3], [3, -3], [13, 0], [3, 3], [-12, 3]], '#c8d2d8');
-    strokePoly(ctx, [[-12, -3], [3, -3], [13, 0], [3, 3], [-12, 3]], COL.ink, 1.5);
-    roughBox(ctx, -13, -4, 7, 8, COL.blue, COL.ink, 1.2);
+    if (tier >= 1) fillPoly(ctx, [[-7, -5], [0, -8], [5, -4], [0, -1]], tier === 2 ? COL.gold : COL.blue);
+    if (lv >= 5 && tier === 1) fillPoly(ctx, [[-2, 3], [7, 7], [10, 3], [4, 1]], '#75c8d2');
+    const bladeTip = tier === 2 ? 17 : tier === 1 ? 14 + (lv - 3) * 0.8 : 13 + (lv - 1) * 0.7;
+    const blade = [[-11, -3.5], [3, -3.5], [bladeTip, 0], [3, 3.5], [-11, 3.5]];
+    fillPoly(ctx, blade, tier === 2 ? '#f4e0a1' : tier === 1 ? '#dceff2' : '#c8d2d8');
+    strokePoly(ctx, blade, COL.ink, tier === 2 ? 1.8 : 1.5);
+    roughLine(ctx, 0, tier === 2 ? -2.1 : -1.7, tier === 2 ? 14 : 11, 0, tier === 2 ? COL.goldDark : '#ffffff', tier === 2 ? 1.5 : 1);
+    roughBox(ctx, -14, -4.5, 8, 9, tier === 2 ? COL.goldDark : COL.blue, COL.ink, 1.2);
+    if (tier === 2) roughCircle(ctx, -7, 0, 2.3, '#fff0a6', COL.ink, 0.7, 7);
   } else if (id === 'bubble') {
-    roughCircle(ctx, 0, 0, 11, 'rgba(139,95,192,0.16)', COL.purple, 2, 12);
+    roughCircle(ctx, 0, 0, tier === 2 ? 13 : tier === 1 ? 12 : 11, 'rgba(139,95,192,0.16)', tier === 2 ? COL.goldDark : COL.purple, tier === 2 ? 2.5 : 2, 12);
+    if (tier >= 1) {
+      roughCircle(ctx, 0, 0, tier === 2 ? 9.5 : 8.5, 'rgba(255,255,255,0.08)', tier === 2 ? COL.gold : '#bda1dd', 1.2, 10);
+      const bubbles = lv;
+      for (let i = 0; i < bubbles; i++) {
+        const a = i * TAU / bubbles - 0.5;
+        roughCircle(ctx, Math.cos(a) * 11, Math.sin(a) * 11, 1.7, '#f4edff', tier === 2 ? COL.goldDark : COL.purple, 0.5, 6);
+      }
+    }
+    if (lv >= 2 && tier === 0) roughCircle(ctx, 7, 6, 2.2, '#efe5ff', COL.purple, 0.5, 6);
     roughCircle(ctx, -4, -4, 3, 'rgba(255,255,255,0.65)', null, 0, 7);
-    drawShieldIcon(2, 2, 6, COL.purple);
+    drawShieldIcon(2, 2, tier === 2 ? 7.5 : 6, tier === 2 ? COL.goldDark : COL.purple);
+    if (tier === 2) doodleStar(ctx, 2, 2, 3, '#fff0a6', 0.8);
   } else if (id === 'ruler') {
-    ctx.rotate(-0.35); roughBox(ctx, -13, -4, 26, 8, '#b8dce0', COL.ink, 1.3);
-    for (let i = -9; i <= 9; i += 6) roughLine(ctx, i, -3, i, 1, '#4c7880', 0.8);
+    ctx.rotate(-0.35);
+    if (tier >= 1) roughBox(ctx, -14, -6, 28, 12, tier === 2 ? 'rgba(245,197,66,0.18)' : 'rgba(117,200,210,0.16)', tier === 2 ? COL.goldDark : COL.blue, 1.1);
+    const rulerW = tier === 2 ? 32 : tier === 1 ? 26 + (lv - 3) * 2 : 26 + (lv - 1);
+    roughBox(ctx, -rulerW / 2, -4, rulerW, 8, tier === 2 ? '#ead27a' : tier === 1 ? '#9fd2d8' : '#b8dce0', COL.ink, 1.3);
+    for (let i = -rulerW / 2 + 4; i <= rulerW / 2 - 3; i += 6) roughLine(ctx, i, -3, i, Math.round(i) % 12 === 0 ? 2 : 1, tier === 2 ? '#755e1f' : '#4c7880', 0.8);
+    if (lv >= 5 && tier === 1) roughBox(ctx, -rulerW / 2 + 2, -6, rulerW - 4, 3, '#d8f1f5', COL.blue, 0.7);
+    if (tier === 2) { fillPoly(ctx, [[16, -4], [20, 0], [16, 4]], COL.gold); doodleStar(ctx, -11, 0, 2.3, '#fff0a6', 0.7); }
   } else if (id === 'crayon') {
-    ctx.rotate(-0.55); roughBox(ctx, -12, -4, 22, 8, '#d96672', COL.ink, 1.3); fillPoly(ctx, [[10, -4], [15, 0], [10, 4]], '#f3b6a8');
+    ctx.rotate(-0.55);
+    if (tier >= 1) {
+      const colors = tier === 2 ? ['#d96672', '#5b9fa9', COL.gold] : ['#d96672', '#5b9fa9', '#8a6ab0'];
+      for (let i = -1; i <= 1; i++) {
+        ctx.save(); ctx.translate(0, i * 4.2); ctx.rotate(i * 0.08);
+        roughBox(ctx, -11, -2.5, tier === 2 ? 23 : 21, 5, colors[i + 1], COL.ink, 0.9);
+        fillPoly(ctx, [[tier === 2 ? 12 : 10, -2.5], [tier === 2 ? 17 : 15, 0], [tier === 2 ? 12 : 10, 2.5]], tint(colors[i + 1], 1.25));
+        ctx.restore();
+      }
+      if (lv >= 4 && tier === 1) roughLine(ctx, -10, -7, 8, -7, lv >= 5 ? COL.gold : '#75c8d2', lv >= 5 ? 2.3 : 1.4);
+      if (lv >= 5 && tier === 1) doodleStar(ctx, -8, -7, 2.2, '#fff0a6', 0.7);
+      if (tier === 2) doodleStar(ctx, -9, 0, 2.7, '#fff0a6', 0.8);
+    } else {
+      roughBox(ctx, -12, -4, 22, 8, '#d96672', COL.ink, 1.3); fillPoly(ctx, [[10, -4], [15, 0], [10, 4]], '#f3b6a8');
+    }
   } else if (id === 'boomerang') {
-    fillPoly(ctx, [[-12, -3], [-2, 0], [3, 11], [8, 7], [5, -2], [12, -8], [6, -12], [0, -5]], '#8068a6');
-    strokePoly(ctx, [[-12, -3], [-2, 0], [3, 11], [8, 7], [5, -2], [12, -8], [6, -12], [0, -5]], COL.ink, 1.3);
+    const wing = [[-12, -3], [-2, 0], [3, 11], [8, 7], [5, -2], [12, -8], [6, -12], [0, -5]];
+    if (tier >= 1) {
+      const wingCount = tier === 2 ? 4 : lv >= 5 ? 4 : lv >= 4 ? 3 : 2;
+      for (let i = 1; i < wingCount; i++) {
+        ctx.save(); ctx.rotate(i * TAU / wingCount);
+        fillPoly(ctx, wing, tier === 2 ? COL.gold : i % 2 ? '#aa8fc7' : '#8068a6'); strokePoly(ctx, wing, COL.ink, 1);
+        ctx.restore();
+      }
+    }
+    fillPoly(ctx, wing, tier === 2 ? '#d7a838' : '#8068a6');
+    strokePoly(ctx, wing, COL.ink, 1.3);
+    roughCircle(ctx, 0, 0, tier === 2 ? 4 : tier === 1 ? 3.2 : 2, tier === 2 ? '#fff0a6' : '#d8c9e8', COL.ink, 0.8, 7);
+    if (tier === 2) doodleStar(ctx, 0, 0, 2.8, COL.goldDark, 0.7);
   } else if (id === 'eraser') {
-    ctx.rotate(-0.3); roughBox(ctx, -10, -7, 20, 14, '#ef9db1', COL.ink, 1.4); roughLine(ctx, -2, -7, -2, 7, '#fff0dd', 2);
+    ctx.rotate(-0.3);
+    if (tier >= 1) roughBox(ctx, -13, -9, 26, 18, tier === 2 ? 'rgba(245,197,66,0.18)' : 'rgba(239,157,177,0.16)', tier === 2 ? COL.goldDark : '#c15f83', 1.1);
+    const eraserW = tier === 2 ? 24 : tier === 1 ? 20 + (lv - 3) * 1.8 : 20 + (lv - 1);
+    roughBox(ctx, -eraserW / 2, tier === 2 ? -8 : -7, eraserW, tier === 2 ? 16 : 14, tier === 2 ? '#e7a86d' : '#ef9db1', COL.ink, 1.4);
+    roughLine(ctx, -3, tier === 2 ? -8 : -7, -3, tier === 2 ? 8 : 7, tier === 2 ? COL.gold : '#fff0dd', tier === 2 ? 3 : 2);
+    if (tier >= 1) { roughLine(ctx, 5, -6, 9, -2, '#fff0dd', 1.2); roughLine(ctx, 5, -1, 9, 3, '#fff0dd', 1.2); }
+    if (lv >= 5 && tier === 1) roughBox(ctx, -9, -10, 17, 4, '#f7c5d3', '#c15f83', 0.8);
+    if (tier === 2) doodleStar(ctx, 3, 0, 3, '#fff0a6', 0.8);
   } else if (id === 'compass') {
-    roughLine(ctx, 0, -12, -8, 10, '#8966a8', 3); roughLine(ctx, 0, -12, 8, 10, '#b9c8cf', 3); roughCircle(ctx, 0, -12, 2.6, COL.gold, COL.ink, 0.8, 6);
+    if (tier >= 1) {
+      const spokes = lv;
+      for (let i = 0; i < spokes; i++) {
+        const a = -Math.PI / 2 + i * TAU / spokes;
+        roughLine(ctx, 0, -1, Math.cos(a) * 13, Math.sin(a) * 13, tier === 2 ? (i % 2 ? COL.gold : '#b9c8cf') : (i % 2 ? '#8966a8' : '#b9c8cf'), tier === 2 ? 2.4 : 2.1);
+      }
+      roughCircle(ctx, 0, -1, tier === 2 ? 4.2 : 3.5, tier === 2 ? '#fff0a6' : '#d6c5e6', COL.ink, 0.9, 7);
+      if (tier === 2) roughCircle(ctx, 0, -1, 11, null, COL.goldDark, 1, 10);
+    } else {
+      roughLine(ctx, 0, -12, -8, 10, '#8966a8', 3); roughLine(ctx, 0, -12, 8, 10, '#b9c8cf', 3); roughCircle(ctx, 0, -12, 2.6, COL.gold, COL.ink, 0.8, 6);
+    }
   } else {
     doodleStar(ctx, 0, 0, 10, COL.goldDark, 2);
   }
@@ -4932,7 +5139,9 @@ function drawItemIcon(id, x, y, s) {
 function drawCardIcon(card, x, y, s) {
   const bits = card.key.split(':');
   if (bits[0] === 'new' || bits[0] === 'up') {
-    drawWeaponIcon(bits[1], x, y, s);
+    const owned = weapons.find((w) => w.id === bits[1]);
+    const iconLevel = bits[0] === 'up' && owned ? Math.min(WEAPON_MAX_LEVEL, owned.level + 1) : 1;
+    drawWeaponIcon(bits[1], x, y, s, iconLevel);
     return;
   }
   if (bits[0] === 'ench') {
@@ -5082,7 +5291,7 @@ function drawHUD() {
       ctx.fillRect(bx + 1, by + 1, 37, 3);
       const fullCd = def.kind === 'support' ? 1 : (def.cd * wCdMul(w.level)) / atkSpeedMul;
       const cooldown = def.kind === 'support' ? 1 : clamp(1 - Math.max(0, w.timer) / fullCd, 0, 1);
-      drawWeaponIcon(w.id, bx + 19.5, by + 17, 15);
+      drawWeaponIcon(w.id, bx + 19.5, by + 17, 15, w.level);
       ctx.beginPath();
       ctx.arc(bx + 19.5, by + 17, 12, -Math.PI / 2, -Math.PI / 2 + TAU * cooldown);
       ctx.strokeStyle = cooldown >= 0.999 ? COL.gold : def.color;
@@ -5934,7 +6143,7 @@ function drawWeaponCodex() {
   const iconX = portraitLayout ? VW / 2 : 92;
   const iconY = portraitLayout ? 126 : 106;
   roughCircle(ctx, iconX, iconY, portraitLayout ? 30 : 32, tint(def.color, 0.15), def.color, 1.6, 12);
-  drawWeaponIcon(id, iconX, iconY, portraitLayout ? 28 : 30);
+  drawWeaponIcon(id, iconX, iconY, portraitLayout ? 28 : 30, WEAPON_MAX_LEVEL);
   const infoX = portraitLayout ? VW / 2 : 142;
   const infoAlign = portraitLayout ? 'center' : 'left';
   text(WEAPON_KIND_NAMES[def.kind], infoX, portraitLayout ? 162 : 83, 9, def.color, infoAlign, true);
@@ -5956,10 +6165,11 @@ function drawWeaponCodex() {
     }
     const accent = finalForm ? COL.goldDark : (evolved ? COL.blue : def.color);
     roughBox(ctx, x, y, w, h, finalForm ? '#fff1c8' : evolved ? '#eaf3f5' : '#fffaf0', accent, evolved || finalForm ? 1.8 : 1.1);
-    roughBox(ctx, x + 7, y + 8, 44, 22, accent, COL.ink, 0.7);
-    text('Lv.' + lv, x + 29, y + 13, 9, COL.white, 'center', true);
-    text((evolved ? '觉醒 · ' : finalForm ? '终极 · ' : '') + WEAPON_FORMS[id][i], x + 59, y + 7, portraitLayout ? 10 : 9.5, COL.ink, 'left', true);
-    text(WEAPON_FORM_TRAITS[id][i], x + 59, y + 26, portraitLayout ? 8.5 : 8, accent, 'left');
+    roughBox(ctx, x + 7, y + 8, 40, 22, accent, COL.ink, 0.7);
+    text('Lv.' + lv, x + 27, y + 13, 8.5, COL.white, 'center', true);
+    drawWeaponIcon(id, x + 62, y + h / 2, finalForm ? 14 : 12, lv);
+    text((evolved ? '觉醒 · ' : finalForm ? '终极 · ' : '') + WEAPON_FORMS[id][i], x + 82, y + 7, portraitLayout ? 9.5 : 8.8, COL.ink, 'left', true);
+    text(WEAPON_FORM_TRAITS[id][i], x + 82, y + 26, portraitLayout ? 8.2 : 7.6, accent, 'left');
   }
   drawCodexNavigation();
 }

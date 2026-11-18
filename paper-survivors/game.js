@@ -240,12 +240,33 @@ const MENU_MUSIC_LEAD = [
   null, null, 66, null, 63, null, 66, null,
 ];
 const MENU_GUITAR_PATTERN = [1, 3, 2, 4, 2, 3, 1, 3];
+const MENU_QUOTES = [
+  '祝你每天都开心，烦恼会慢慢散去',
+  '别因一时不顺，就否定努力的自己',
+  '累了就休息一下，你不必一直坚强',
+  '今天也请好好吃饭，好好爱自己',
+  '慢一点没关系，你一直都在向前',
+  '愿你被温柔接住，也有勇气重新出发',
+  '过去留在昨天，今天值得新的期待',
+  '你已经做得很好了，别总责怪自己',
+  '不必讨好所有人，先照顾好自己的心',
+  '生活偶尔下雨，但总会重新放晴',
+  '答案也许会迟到，努力不会被辜负',
+  '愿你的付出有回应，疲惫都有归处',
+];
+const MENU_QUOTE_OFFSET = Math.floor(Math.random() * MENU_QUOTES.length);
+
+function currentMenuQuote(now) {
+  return MENU_QUOTES[(MENU_QUOTE_OFFSET + Math.floor(now / 10)) % MENU_QUOTES.length];
+}
 
 // 本地预览可放置用户已授权的首页曲目。缺失或加载失败时自动回退到上面的原创合成主题。
 const MenuTrack = {
   src: 'local-audio/menu-theme.mp3',
   audio: null,
   available: false,
+  status: 'idle',
+  phase: 'idle',
   enabled: true,
   fadeFrame: 0,
   menuVolume: 0.48,
@@ -253,13 +274,21 @@ const MenuTrack = {
   init() {
     if (this.audio) return;
     const audio = new Audio(this.src);
+    this.status = 'loading';
     audio.id = 'menu-theme-audio';
     audio.hidden = true;
     audio.loop = true;
     audio.preload = 'metadata';
     audio.volume = 0;
-    audio.addEventListener('loadeddata', () => { this.available = true; }, { once: true });
-    audio.addEventListener('error', () => { this.available = false; });
+    audio.addEventListener('loadeddata', () => {
+      this.available = true;
+      this.status = 'ready';
+    }, { once: true });
+    audio.addEventListener('error', () => {
+      this.available = false;
+      this.status = 'failed';
+      this.phase = 'idle';
+    });
     document.body.appendChild(audio);
     this.audio = audio;
   },
@@ -272,22 +301,32 @@ const MenuTrack = {
 
   setEnabled(value) {
     this.enabled = !!value;
-    if (!this.enabled) this.fadeTo(0, 180, true);
+    if (!this.enabled) this.fadeTo(0, 180, true, () => { this.phase = 'idle'; });
     else if (state === 'menu') this.toMenu();
   },
 
   toMenu() {
     if (!this.enabled) return;
     this.init();
+    this.phase = 'menu';
     this.fadeTo(this.menuVolume, 900, false);
   },
 
   toGame() {
     if (!this.audio) return;
-    this.fadeTo(0, 1900, true);
+    if (this.audio.paused || this.audio.volume <= 0.004) {
+      if (this.fadeFrame) cancelAnimationFrame(this.fadeFrame);
+      this.fadeFrame = 0;
+      this.audio.volume = 0;
+      this.audio.pause();
+      this.phase = 'idle';
+      return;
+    }
+    this.phase = 'fading-out';
+    this.fadeTo(0, 1900, true, () => { this.phase = 'idle'; });
   },
 
-  fadeTo(target, duration, pauseAtEnd) {
+  fadeTo(target, duration, pauseAtEnd, onDone) {
     if (!this.audio) return;
     if (this.fadeFrame) cancelAnimationFrame(this.fadeFrame);
     const audio = this.audio;
@@ -296,7 +335,13 @@ const MenuTrack = {
     if (target > 0) {
       const play = audio.play();
       if (play && play.then) {
-        play.then(() => { this.available = true; }).catch(() => { this.available = false; });
+        play.then(() => {
+          this.available = true;
+          this.status = 'ready';
+        }).catch(() => {
+          this.available = false;
+          this.status = 'blocked';
+        });
       }
     }
     const step = (now) => {
@@ -307,9 +352,18 @@ const MenuTrack = {
       else {
         this.fadeFrame = 0;
         if (pauseAtEnd && target === 0) audio.pause();
+        if (onDone) onDone();
       }
     };
     this.fadeFrame = requestAnimationFrame(step);
+  },
+
+  shouldOwnMenu() {
+    return this.enabled && this.status !== 'failed' && this.status !== 'blocked';
+  },
+
+  isAudible() {
+    return !!this.audio && !this.audio.paused && (this.audio.volume > 0.002 || this.phase === 'fading-out');
   },
 };
 
@@ -326,6 +380,7 @@ const Music = {
   nextTime: 0,
   step: 0,
   scene: '',
+  gameMusicBlocked: false,
   enabled: loadLocal(MUSIC_KEY, '1') !== '0',
 
   unlock() {
@@ -566,13 +621,24 @@ const Music = {
       this.step = 0;
       this.nextTime = this.ctx.currentTime + 0.04;
     }
-    const externalMenu = nextScene === 'menu' && MenuTrack.available;
-    const target = quiet ? 0.035 : (externalMenu ? 0.0001 : (nextScene === 'menu' ? 0.09 : (state === 'dead' ? 0.065 : 0.13)));
+    const externalMenu = nextScene === 'menu' && MenuTrack.shouldOwnMenu();
+    const blockGameMusic = nextScene === 'game' && MenuTrack.isAudible();
+    if (this.gameMusicBlocked !== blockGameMusic) {
+      this.gameMusicBlocked = blockGameMusic;
+      if (!blockGameMusic && nextScene === 'game') {
+        this.step = 0;
+        this.nextTime = this.ctx.currentTime + 0.04;
+      }
+    }
+    const target = quiet ? 0.035 : ((externalMenu || blockGameMusic) ? 0.0001 : (nextScene === 'menu' ? 0.09 : (state === 'dead' ? 0.065 : 0.13)));
     this.master.gain.setTargetAtTime(target, this.ctx.currentTime, 0.12);
     const eighth = (60 / (nextScene === 'menu' ? 70 : 116)) / 2;
     while (this.nextTime < this.ctx.currentTime + 0.28) {
-      if (nextScene === 'menu' && !externalMenu) this.scheduleMenuStep(this.nextTime, eighth);
-      else this.scheduleGameStep(this.nextTime, eighth);
+      if (nextScene === 'menu') {
+        if (!externalMenu) this.scheduleMenuStep(this.nextTime, eighth);
+      } else if (!blockGameMusic) {
+        this.scheduleGameStep(this.nextTime, eighth);
+      }
       this.step = (this.step + 1) % 64;
       this.nextTime += eighth;
     }
@@ -5658,7 +5724,7 @@ function drawMenu() {
 
   text('纸 片 幸 存 者', VW / 2, 62, 40, COL.ink, 'center', true, -0.02);
   roughLine(ctx, VW / 2 - 150, 116, VW / 2 + 150, 114, COL.ink, 2);
-  text('PAPER SURVIVORS · 手绘生存原型', VW / 2, 126, 10, COL.inkSoft, 'center');
+  text(currentMenuQuote(now), VW / 2, 126, 10, COL.inkSoft, 'center');
 
   roughBox(ctx, nameBtn.x, nameBtn.y, nameBtn.w, nameBtn.h, '#fffdf8', COL.ink, 1.2);
   text('昵称 · ' + playerName, VW / 2, nameBtn.y + 3, 9, COL.ink, 'center', true);
@@ -5700,7 +5766,7 @@ function drawMenuPortrait(now) {
   doodleStar(ctx, VW - 40, 76, 5, COL.red, 1.3);
   text('纸 片 幸 存 者', VW / 2, 72, 30, COL.ink, 'center', true, -0.02);
   roughLine(ctx, 48, 112, VW - 48, 112, COL.ink, 2);
-  text('PAPER SURVIVORS · 竖屏生存', VW / 2, 122, 9, COL.inkSoft, 'center');
+  text(currentMenuQuote(now), VW / 2, 122, 9, COL.inkSoft, 'center');
 
   const bob = Math.sin(now * 2) * 3;
   drawMenuSlime(112, 205 + bob, look.x, look.y, menuReactionStrength(nowMs, 112, 205));

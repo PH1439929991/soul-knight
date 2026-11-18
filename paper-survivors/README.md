@@ -27,7 +27,7 @@ python3 -m http.server 8080
 
 十一张地图的纯背景总览见 `gallery.html`，页面会隐藏 HUD、人物和怪物，仅展示实际 Canvas 地表、立体地形、场景物件与环境动效。
 
-十一张地图的首页场景设计草案见 `menu-scenes.html`。该页用 `?menuScene=forest|waste|desert|swamp|ocean|volcano|inferno|heaven|four|snow|crimson` 显示查询参数专用预览：正式首页布局与基础角色不变，只叠加地图环境、循环动态和轻量穿戴配饰，不影响默认入口。
+首页会从十一张地图中随机选择一套动态环境，并给角色和怪物叠加对应配饰；刷新页面或从游戏返回首页时重新抽取。`menu-scenes.html` 可集中审阅全部方案，`?menuScene=forest|waste|desert|swamp|ocean|volcano|inferno|heaven|four|snow|crimson` 可固定指定场景。
 
 武器、攻击特效、普通近战/远程怪、精英与 Boss 的集中视觉审阅页见 `combat-gallery.html`；页面使用动画循环同时展示轮廓、预警、命中反馈和层级 UI。
 

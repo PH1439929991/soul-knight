@@ -97,6 +97,7 @@ const FORCE_ELITE_PREVIEW = new URLSearchParams(window.location.search).get('eli
 const FORCE_CLUSTER_PREVIEW = new URLSearchParams(window.location.search).get('cluster') === '1';
 const FORCED_MENU_SEASON = new URLSearchParams(window.location.search).get('season');
 const MENU_SCENE_ID = new URLSearchParams(window.location.search).get('menuScene');
+let activeMenuSceneId = MENU_SCENE_ID;
 const FORCE_STORY_PREVIEW = new URLSearchParams(window.location.search).get('story');
 
 function loadLocal(key, fallback) {
@@ -1030,6 +1031,21 @@ const MAPS = [
   { id: 'crimson', name: '猩红之地', ground: '#3b2029', grain: '#21151c', doodle: '#d34b5f', boss: '阿瑞斯',       mech: 'bloodmoon', interval: 6, mechDesc: '猩红月蚀落印' },
 ];
 
+function rerollMenuScene() {
+  if (MENU_SCENE_ID && MAPS.some((map) => map.id === MENU_SCENE_ID)) {
+    activeMenuSceneId = MENU_SCENE_ID;
+    return;
+  }
+  const choices = MAPS.filter((map) => map.id !== activeMenuSceneId);
+  activeMenuSceneId = (choices[Math.floor(Math.random() * choices.length)] || MAPS[0]).id;
+}
+
+function currentMenuScene() {
+  return MAPS.find((map) => map.id === activeMenuSceneId) || MAPS[0];
+}
+
+rerollMenuScene();
+
 const BOSS_TITLES = {
   forest: '冥门三首守卫',
   waste: '迷宫牛首',
@@ -1674,6 +1690,7 @@ function returnToMenu() {
     seconds: Math.floor(time),
   };
   rerollMenuSeason();
+  rerollMenuScene();
   state = 'menu';
   MenuTrack.toMenu();
   updateLayoutRects();
@@ -5411,7 +5428,7 @@ function drawStartButtons() {
 }
 
 function drawMenuSceneGrass(now, colors, count) {
-  const R = makeRng(0x51a7c3 ^ (MENU_SCENE_ID || '').length * 7919);
+  const R = makeRng(0x51a7c3 ^ mapSeed(activeMenuSceneId || 'forest'));
   ctx.save();
   ctx.globalAlpha = 0.88;
   for (let i = 0; i < count; i++) {
@@ -5621,27 +5638,15 @@ function drawMenu() {
   const now = performance.now() / 1000;
   const nowMs = now * 1000;
   const look = menuLookTarget(nowMs);
-  const previewMap = MENU_SCENE_ID ? MAPS.find((map) => map.id === MENU_SCENE_ID) : null;
-  const tile = getPaperTile(previewMap || undefined);
+  const previewMap = currentMenuScene();
+  const tile = getPaperTile(previewMap);
   for (let x = 0; x < VW; x += TILE_P) {
     for (let y = 0; y < VH; y += TILE_P) ctx.drawImage(tile, x, y);
   }
-  if (previewMap) drawMenuSceneBackdrop(previewMap, now);
+  drawMenuSceneBackdrop(previewMap, now);
   if (portraitLayout) {
     drawMenuPortrait(now);
     return;
-  }
-
-  // 恢复最初首页的太阳与随手涂鸦装饰。
-  if (!previewMap) {
-    roughCircle(ctx, 72, 60, 20, COL.gold, COL.ink, 2, 10);
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * TAU + 0.2;
-      roughLine(ctx, 72 + Math.cos(a) * 27, 60 + Math.sin(a) * 27, 72 + Math.cos(a) * 35, 60 + Math.sin(a) * 35, COL.ink, 1.6);
-    }
-    doodleStar(ctx, 520, 70, 6, COL.gold, 1.6);
-    doodleStar(ctx, 560, 110, 5, COL.red, 1.5);
-    doodleStar(ctx, 120, 150, 4, COL.blue, 1.4);
   }
 
   // 小角色排排站
@@ -5778,7 +5783,7 @@ function drawMenuSeasonAccessory(kind) {
 }
 
 function drawMenuMapAccessory(kind) {
-  const id = MENU_SCENE_ID;
+  const id = activeMenuSceneId;
   if (!id || !MAPS.some((map) => map.id === id)) return;
   const hero = kind === 'hero';
   if (id === 'forest') {

@@ -163,8 +163,8 @@ __ps.fields / __ps.hazards / __ps.fourPhase
 - 程序化攻击、受击、拾取、升级、Boss 与胜利提示音效
 - 可编辑昵称，默认「艾志恒」，使用 localStorage 保存；Q 版昵称牌跟随角色移动
 - 主页角色追随鼠标/触点视线，点击触发纸屑星芒、涟漪和角色弹跳反应
-- 首页已恢复最初的纸张底纹、手绘太阳与星星装饰；`MENU_SEASONS_ENABLED = false`，因此四季图片不预加载、不随机展示，人物也不再绘制季节装扮。实验素材及绘制函数暂时保留，便于未来单独设计后再启用
-- `menu-scenes.html` 是十一地图首页场景草案总览，十一个 iframe 通过 `?menuScene=<mapId>` 调用 `drawMenuSceneBackdrop()`：雪山增加冰峰/雪松/飘雪/风痕，猩红之地增加血月/枯枝/红雾；`drawMenuMapAccessory()` 只叠加配饰，不改变英雄与史莱姆基础造型；默认首页不会启用这些预览层
+- 首页默认从十一张地图随机选择一套动态环境；刷新页面或暂停返回首页时调用 `rerollMenuScene()` 重新抽取，且不会连续抽到同一张图。角色与怪物通过 `drawMenuMapAccessory()` 叠加对应配饰，不改变基础造型，也不显示地图名称
+- `menu-scenes.html` 是十一地图首页场景总览，十一个 iframe 通过 `?menuScene=<mapId>` 固定调用 `drawMenuSceneBackdrop()`：雪山增加冰峰/雪松/飘雪/风痕，猩红之地增加血月/枯枝/红雾；查询参数仍可用于单场景调试
 - 暂停菜单支持继续游戏与返回主页面；返回后通过 `suspendedRun` 保留完整内存战斗状态，主页可继续原局或重开
 - `Music.tick()` 会按 `menu` / `game` 切换音乐场景；首页是 70 BPM 原创千禧年华语 R&B 月夜主题，由 `pluckNote()` 尼龙弦音色、七九和弦、下行低音、38ms 摇摆切分、轻鼓点与反馈延迟组成，不采样或复刻现有歌曲
 - `MenuTrack` 会优先加载 `local-audio/menu-theme.mp3`，首页循环、进入战斗时 1.9 秒渐弱后暂停，返回首页时 0.9 秒渐入；加载失败则继续使用原创 Web Audio 主题。当前确认发布的音乐文件随仓库和 Cloudflare Pages 一并部署

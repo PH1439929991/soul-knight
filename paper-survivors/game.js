@@ -89,6 +89,7 @@ const AUTO_START = new URLSearchParams(window.location.search).get('autostart') 
 const BACKGROUND_PREVIEW = new URLSearchParams(window.location.search).get('background') === '1';
 const FORCE_BOSS_PREVIEW = new URLSearchParams(window.location.search).get('boss') === '1';
 const FORCE_BOSS_INTRO_PREVIEW = new URLSearchParams(window.location.search).get('bossIntro') === '1';
+const FORCE_LEVEL_CLEAR_PREVIEW = new URLSearchParams(window.location.search).get('clear') === '1';
 const FORCE_WEAPON_PREVIEW = new URLSearchParams(window.location.search).get('weapon');
 const FORCE_WEAPON_LEVEL = clamp(Number(new URLSearchParams(window.location.search).get('weaponLevel')) || 1, 1, 6);
 const FORCE_LEVELUP_PREVIEW = new URLSearchParams(window.location.search).get('levelup') === '1';
@@ -615,7 +616,7 @@ const Music = {
   tick() {
     if (!this.ctx || !this.enabled) return;
     const quiet = state === 'paused' || editingName || document.hidden;
-    const nextScene = state === 'menu' ? 'menu' : 'game';
+    const nextScene = (state === 'menu' || state === 'codex') ? 'menu' : 'game';
     if (this.scene !== nextScene) {
       this.scene = nextScene;
       this.step = 0;
@@ -977,6 +978,17 @@ window.addEventListener('keydown', (e) => {
   if (!Input.keys.has(k)) {
     Input.keys.add(k);
     if (k === 'm') Music.toggle();
+    else if (state === 'codex') {
+      if (k === 'escape') closeCodex();
+      else if (k === 'arrowleft') changeCodexPage(-1);
+      else if (k === 'arrowright') changeCodexPage(1);
+      else if (k === '1') openCodex('weapons');
+      else if (k === '2') openCodex('monsters');
+    }
+    else if (state === 'play' && levelClear) {
+      if (k === 'escape') finishLevelChoice(false);
+      else finishLevelChoice(true);
+    }
     else if (state === 'menu') {
       if (suspendedRun) resumeSuspendedRun();
       else startGame(runMode);
@@ -1002,11 +1014,31 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
 
+  if (state === 'codex') {
+    if (inside(p, codexBackBtn)) { closeCodex(); return; }
+    if (inside(p, codexPrevBtn)) { changeCodexPage(-1); return; }
+    if (inside(p, codexNextBtn)) { changeCodexPage(1); return; }
+    const weaponTab = codexTabBtn('weapons');
+    const monsterTab = codexTabBtn('monsters');
+    if (inside(p, weaponTab)) { openCodex('weapons'); return; }
+    if (inside(p, monsterTab)) { openCodex('monsters'); return; }
+    return;
+  }
+
+  if (state === 'play' && levelClear) {
+    if (clearT > 0) return;
+    if (inside(p, levelNextBtn)) { finishLevelChoice(true); return; }
+    if (inside(p, levelHomeBtn)) { finishLevelChoice(false); return; }
+    return;
+  }
+
   if (state === 'menu' || state === 'dead' || state === 'win') {
     if (state === 'menu') {
       reactToMenuClick(p);
       if (inside(p, nameBtn)) { openNameEditor(); return; }
       if (inside(p, musicBtn)) { Music.toggle(); return; }
+      if (inside(p, menuCodexBtn('weapons'))) { openCodex('weapons'); return; }
+      if (inside(p, menuCodexBtn('monsters'))) { openCodex('monsters'); return; }
       for (let i = 0; i < 2; i++) {
         if (inside(p, modeBtn(i))) { runMode = MODE_KEYS[i]; return; }
       }
@@ -1076,6 +1108,39 @@ function inside(p, r) {
 
 function insidePad(p, r, pad) {
   return p.x >= r.x - pad && p.x <= r.x + r.w + pad && p.y >= r.y - pad && p.y <= r.y + r.h + pad;
+}
+
+function codexPageCount() {
+  return codexKind === 'weapons' ? Object.keys(WEAPON_DEFS).length : MAPS.length + 1;
+}
+
+function codexTabBtn(kind) {
+  const w = portraitLayout ? 140 : 128;
+  const gap = 10;
+  const total = w * 2 + gap;
+  return { x: (VW - total) / 2 + (kind === 'monsters' ? w + gap : 0), y: portraitLayout ? 48 : 18, w, h: 27 };
+}
+
+function openCodex(kind) {
+  codexKind = kind === 'monsters' ? 'monsters' : 'weapons';
+  codexPage = 0;
+  state = 'codex';
+  updateLayoutRects();
+  Input.keys.clear();
+  Input.pointer.down = false;
+}
+
+function closeCodex() {
+  state = 'menu';
+  codexPage = 0;
+  updateLayoutRects();
+  Input.keys.clear();
+  Input.pointer.down = false;
+}
+
+function changeCodexPage(delta) {
+  const count = codexPageCount();
+  codexPage = (codexPage + delta + count) % count;
 }
 
 // =============================================================
@@ -1168,6 +1233,8 @@ const CHAPTER_STORIES = [
 let state = 'menu';
 let runMode = 'story';
 let suspendedRun = null;
+let codexKind = 'weapons';
+let codexPage = 0;
 let levelIdx = 0;
 let currentMap = MAPS[0];
 let levelClear = false;
@@ -1198,6 +1265,7 @@ const player = {
   hp: 100, maxHp: 100,
   speed: 122, inv: 0, magnet: 140,
   ward: 0, wardMax: 0, wardRegen: 0,
+  shieldRegenDelay: 0,
   level: 1, xp: 0, xpNeed: 10,
   aim: 0,
   stepDust: 0,
@@ -1207,12 +1275,26 @@ const WEAPON_DEFS = {
   pencil:    { name: '铅笔飞镖', short: '铅笔', kind: 'ranged',  dmg: 14, cd: 0.40, count: 1, spread: 0.16, pierce: 0, speed: 470, range: 300, color: COL.orange },
   slingshot: { name: '弹弓',     short: '弹弓', kind: 'ranged',  dmg: 9,  cd: 0.72, count: 3, spread: 0.26, pierce: 0, speed: 430, range: 210, color: COL.green },
   knife:     { name: '美工刀',   short: '美工刀', kind: 'melee', dmg: 24, cd: 0.55, range: 84, arc: 1.3, color: COL.blue },
-  bubble:    { name: '护盾泡泡', short: '护盾', kind: 'support', dmg: 0, cd: 0, shield: 30, regen: 4, color: COL.purple },
+  bubble:    { name: '护盾泡泡', short: '护盾', kind: 'support', dmg: 0, cd: 0, shield: 18, regen: 0.6, color: COL.purple },
   ruler:     { name: '长尺穿刺', short: '直尺', kind: 'ranged', dmg: 20, cd: 0.90, count: 1, spread: 0, pierce: 3, speed: 560, range: 380, color: '#5b9fa9' },
   crayon:    { name: '蜡笔连射', short: '蜡笔', kind: 'ranged', dmg: 8, cd: 0.19, count: 1, spread: 0.08, pierce: 0, speed: 390, range: 245, color: '#d96672' },
   boomerang: { name: '折纸回旋镖', short: '回旋镖', kind: 'ranged', dmg: 18, cd: 1.00, count: 1, spread: 0, pierce: 3, speed: 285, range: 300, color: '#8068a6' },
   eraser:    { name: '橡皮炸弹', short: '橡皮', kind: 'ranged', dmg: 30, cd: 1.35, count: 1, spread: 0.05, pierce: 0, speed: 250, range: 250, color: '#e7839b' },
   compass:   { name: '圆规回旋刃', short: '圆规', kind: 'melee', dmg: 17, cd: 0.82, range: 62, arc: TAU, color: '#8966a8' },
+};
+const WEAPON_MAX_LEVEL = 6;
+const WEAPON_EVOLVE_LEVEL = 3;
+const WEAPON_KIND_NAMES = { ranged: '远程武器', melee: '近战武器', support: '辅助武器' };
+const WEAPON_GUIDES = {
+  pencil: '稳定直射，升级后增加弹数、穿透与暴击。',
+  slingshot: '扇形散射，贴近大型目标时爆发极高。',
+  knife: '近身月牙斩，范围与连斩次数随形态成长。',
+  bubble: '提供可再生护盾，3 级后获得周期反震。',
+  ruler: '长距离高穿透直线攻击，适合清理怪群。',
+  crayon: '高频连射，后期形成多色扇形弹幕。',
+  boomerang: '投出后回返，可对同一队列多次命中。',
+  eraser: '低射速范围爆破，擅长处理密集敌群。',
+  compass: '围绕自身的环形近战，适合贴身突围。',
 };
 const WEAPON_FORMS = {
   pencil: ['削尖铅芯', '硬芯贯纸', '双线速写', '钢芯长锋', '三线连描', '金尖穿页'],
@@ -1244,7 +1326,7 @@ function weaponConfig(w) {
   if (w.id === 'pencil') { if (lv >= 2) c.pierce += 1; if (lv >= 3) c.count = 2; if (lv >= 4) { c.speed *= 1.18; c.range += 70; } if (lv >= 5) c.count = 3; if (lv >= 6) { c.pierce += 2; c.critAdd = 0.12; } }
   else if (w.id === 'slingshot') { c.count = lv >= 6 ? 9 : lv >= 5 ? 7 : lv >= 3 ? 5 : lv >= 2 ? 4 : 3; if (lv >= 4) c.pierce += 1; if (lv >= 6) c.spread = 0.18; }
   else if (w.id === 'knife') { if (lv >= 2) c.range += 12; if (lv >= 3) c.arc = 1.65; if (lv >= 4) c.dmg *= 1.18; c.swings = lv >= 6 ? 3 : lv >= 5 ? 2 : 1; }
-  else if (w.id === 'bubble') { c.pulse = lv >= 6 ? 2 : lv >= 3 ? 1 : 0; c.pulseRange = lv >= 6 ? 112 : lv >= 4 ? 88 : 72; }
+  else if (w.id === 'bubble') { c.pulse = lv >= 6 ? 2 : lv >= 3 ? 1 : 0; c.pulseRange = lv >= 6 ? 96 : lv >= 4 ? 82 : 68; }
   else if (w.id === 'ruler') { if (lv >= 2) c.pierce += 2; c.count = lv >= 5 ? 3 : lv >= 3 ? 2 : 1; if (lv >= 4) { c.range += 90; c.speed *= 1.12; } if (lv >= 6) c.cd *= 0.72; }
   else if (w.id === 'crayon') { c.count = lv >= 6 ? 6 : lv >= 5 ? 5 : lv >= 3 ? 3 : lv >= 2 ? 2 : 1; if (lv >= 4) c.pierce += 1; c.spread = lv >= 3 ? 0.12 : 0.08; }
   else if (w.id === 'boomerang') { if (lv >= 2) c.pierce += 2; c.count = lv >= 6 ? 4 : lv >= 5 ? 3 : lv >= 3 ? 2 : 1; c.returnSpeed = lv >= 4 ? 430 : 340; }
@@ -1327,6 +1409,15 @@ const startBtn = { x: 0, y: 0, w: 220, h: 46 };
 const restartBtn = { x: 0, y: 0, w: 0, h: 46 };
 const nameBtn = { x: 0, y: 0, w: 160, h: 18 };
 const musicBtn = { x: 10, y: 0, w: 82, h: 16 };
+const codexBackBtn = { x: 14, y: 14, w: 72, h: 26 };
+const codexPrevBtn = { x: 0, y: 0, w: 92, h: 28 };
+const codexNextBtn = { x: 0, y: 0, w: 92, h: 28 };
+const levelNextBtn = { x: 0, y: 0, w: 150, h: 38 };
+const levelHomeBtn = { x: 0, y: 0, w: 150, h: 38 };
+function menuCodexBtn(kind) {
+  if (portraitLayout) return { x: kind === 'weapons' ? 24 : VW - 164, y: 148, w: 140, h: 28 };
+  return { x: VW - 118, y: kind === 'weapons' ? 142 : 174, w: 106, h: 25 };
+}
 function diffBtn(i) {
   const w = portraitLayout ? 100 : 100, h = 26, gap = portraitLayout ? 8 : 12;
   const total = w * 3 + gap * 2;
@@ -1367,6 +1458,14 @@ function updateLayoutRects() {
   pauseContinueBtn.y = portraitLayout ? VH / 2 - 45 : 166;
   pauseHomeBtn.x = VW / 2 - 92;
   pauseHomeBtn.y = portraitLayout ? VH / 2 + 7 : 218;
+  codexPrevBtn.x = 18;
+  codexPrevBtn.y = VH - 42;
+  codexNextBtn.x = VW - 110;
+  codexNextBtn.y = VH - 42;
+  levelNextBtn.x = VW / 2 - 158;
+  levelNextBtn.y = portraitLayout ? VH / 2 + 34 : 202;
+  levelHomeBtn.x = VW / 2 + 8;
+  levelHomeBtn.y = levelNextBtn.y;
 }
 
 function cardRect(i) {
@@ -1398,6 +1497,7 @@ function newRun() {
   player.shield = 0;
   player.shieldMax = 0;
   player.shieldRegen = 0;
+  player.shieldRegenDelay = 0;
   player.ward = 0;
   player.wardMax = 0;
   player.wardRegen = 0;
@@ -1688,7 +1788,29 @@ function updateHazards(dt) {
 function completeLevel() {
   if (state !== 'play') return;
   levelClear = true;
-  clearT = 1.8;
+  clearT = 0.35;
+}
+
+function finishLevelChoice(continueRun) {
+  if (!levelClear) return;
+  const chapter = runMode === 'story' && (levelIdx + 1) % 4 === 0 ? Math.floor(levelIdx / 4) : null;
+  levelClear = false;
+  clearT = 0;
+  Input.keys.clear();
+  Input.pointer.down = false;
+
+  if (continueRun) {
+    if (chapter != null) showStoryChapter(chapter);
+    else nextLevel();
+    return;
+  }
+
+  if (chapter != null) {
+    returnToMenu({ pendingStory: chapter, completed: true });
+    return;
+  }
+  nextLevel();
+  if (state === 'play') returnToMenu();
 }
 
 function showStoryChapter(index) {
@@ -1732,12 +1854,14 @@ function startGame(mode) {
 
 function resumeSuspendedRun() {
   if (!suspendedRun) return;
+  const pendingStory = suspendedRun.pendingStory;
   MenuTrack.toGame();
   runMode = suspendedRun.runMode;
   difficulty = suspendedRun.difficulty;
   suspendedRun = null;
   updateLayoutRects();
-  state = 'play';
+  if (pendingStory != null) showStoryChapter(pendingStory);
+  else state = 'play';
   Input.keys.clear();
   Input.pointer.down = false;
 }
@@ -1747,13 +1871,17 @@ function togglePause() {
   else if (state === 'paused') state = 'play';
 }
 
-function returnToMenu() {
+function returnToMenu(options) {
+  const opts = options || {};
+  const nextIndex = Math.min(MAPS.length * 4 - 1, levelIdx + (opts.completed ? 1 : 0));
+  const nextMap = MAPS[Math.min(MAPS.length - 1, Math.floor(nextIndex / 4))];
   suspendedRun = {
     runMode,
     difficulty,
-    level: levelIdx + 1,
-    mapName: currentMap.name,
-    seconds: Math.floor(time),
+    level: nextIndex + 1,
+    mapName: opts.completed ? nextMap.name : currentMap.name,
+    seconds: opts.completed ? 0 : Math.floor(time),
+    pendingStory: opts.pendingStory == null ? null : opts.pendingStory,
   };
   rerollMenuSeason();
   rerollMenuScene();
@@ -1813,6 +1941,16 @@ const ELITE_MYTHS = {
   snow:    { name: '神链狼卫', skill: '寒风狼嚎', cd: 3.0,  far: 225, near: 145 },
   crimson: { name: '恐惧战使', skill: '血月军阵', cd: 2.7,  far: 230, near: 150 },
 };
+
+const MONSTER_BASE_INFO = [
+  { name: '墨滴', type: 'slime', role: '基础追击', desc: '直线靠近玩家，数量多但行动单纯。' },
+  { name: '纸蝠', type: 'bat', role: '高速突进', desc: '移动速度快，会从怪群缝隙中贴近。' },
+  { name: '墨团', type: 'ink', role: '重装前排', desc: '生命较高、移动缓慢，负责挤压走位空间。' },
+  { name: '喷墨者', type: 'shooter', role: '远程压制', desc: '保持距离并在瞄准前摇后发射墨弹。' },
+  { name: '分裂墨', type: 'splitter', role: '死亡分裂', desc: '被击败后分裂成两只小墨滴。' },
+  { name: '跳跳纸', type: 'jumper', role: '周期跳袭', desc: '蓄力后跳向玩家，落点更难预判。' },
+  { name: '精英守卫', type: 'eliteShooter', role: '地图专属技能', desc: '每张地图拥有独立神话身份与主动技能。' },
+];
 
 function eliteMyth(id) {
   return ELITE_MYTHS[id] || ELITE_MYTHS.forest;
@@ -1989,9 +2127,10 @@ function syncShield() {
   const tapeBonus = ownedItems.tape ? 15 : 0;
   if (!w && !tapeBonus) return;
   const def = WEAPON_DEFS.bubble;
-  player.shieldMax = tapeBonus + (w ? def.shield + 15 * (w.level - 1) : 0);
-  player.shieldRegen = (ownedItems.tape ? 1.5 : 0) + (w ? def.regen + 2 * (w.level - 1) : 0);
-  player.shield = Math.max(player.shield, player.shieldMax);
+  const oldMax = player.shieldMax || 0;
+  player.shieldMax = tapeBonus + (w ? def.shield + 6 * (w.level - 1) : 0);
+  player.shieldRegen = (ownedItems.tape ? 1.5 : 0) + (w ? def.regen + 0.2 * (w.level - 1) : 0);
+  player.shield = Math.min(player.shieldMax, Math.max(0, player.shield || 0) + Math.max(0, player.shieldMax - oldMax));
 }
 
 function syncWard() {
@@ -2025,16 +2164,16 @@ function buildCards() {
   }
 
   for (const w of weapons) {
-    if (w.level >= 6) continue;
+    if (w.level >= WEAPON_MAX_LEVEL) continue;
     const def = WEAPON_DEFS[w.id];
     const nextLevel = w.level + 1;
     const nextForm = WEAPON_FORMS[w.id][nextLevel - 1];
     const nextTrait = WEAPON_FORM_TRAITS[w.id][nextLevel - 1];
     pool.push({
       key: 'up:' + w.id,
-      name: nextLevel === 3 ? '觉醒 · ' + nextForm : nextLevel === 6 ? '终极 · ' + nextForm : nextForm,
+      name: nextLevel === WEAPON_EVOLVE_LEVEL ? '觉醒 · ' + nextForm : nextLevel === WEAPON_MAX_LEVEL ? '终极 · ' + nextForm : nextForm,
       desc: nextTrait,
-      sub: 'Lv.' + w.level + ' → ' + nextLevel + (nextLevel === 3 ? ' · 形态觉醒' : nextLevel === 6 ? ' · 最终形态' : ''),
+      sub: 'Lv.' + w.level + ' → ' + nextLevel + (nextLevel === WEAPON_EVOLVE_LEVEL ? ' · 形态觉醒' : nextLevel === WEAPON_MAX_LEVEL ? ' · 最终形态' : ''),
       apply: () => { w.level++; if (w.id === 'bubble') syncShield(); },
     });
   }
@@ -2197,7 +2336,7 @@ function killEnemy(e) {
     shakePower = 8;
     for (let i = 0; i < 60; i++) puff(e.x, e.y, i % 2 ? COL.gold : COL.white, 1, 200, 0.8);
     levelClear = true;
-    clearT = 2.0;
+    clearT = 0.35;
     return;
   }
   for (let i = 0; i < 8; i++) puff(e.x, e.y, i % 3 ? e.color : COL.white, 1, 90, 0.4);
@@ -2225,7 +2364,7 @@ function killEnemy(e) {
 
 function damagePlayer(dmg) {
   if (player.inv > 0 || state !== 'play') return;
-  player.inv = 1.0;
+  player.inv = 0.72;
   flashT = 0.18;
   shakeT = 0.22;
   shakePower = Math.max(shakePower, 4.5);
@@ -2233,9 +2372,13 @@ function damagePlayer(dmg) {
   if (player.shield > 0) {
     const absorbed = Math.min(player.shield, dmg);
     player.shield -= absorbed;
+    player.shieldRegenDelay = 4.0;
     dmg -= absorbed;
     for (let i = 0; i < 8; i++) puff(player.x, player.y, COL.purple, 1, 110, 0.3);
-    if (dmg <= 0) return;
+    if (dmg <= 0) {
+      player.inv = 0.12;
+      return;
+    }
   }
   player.hp -= dmg;
   for (let i = 0; i < 10; i++) puff(player.x, player.y, COL.red, 1, 100, 0.35);
@@ -2289,12 +2432,7 @@ function update(dt) {
   if (player.inv > 0) player.inv -= dt;
 
   if (levelClear) {
-    clearT -= dt;
-    if (clearT <= 0) {
-      levelClear = false;
-      if (runMode === 'story' && (levelIdx + 1) % 4 === 0) showStoryChapter(Math.floor(levelIdx / 4));
-      else nextLevel();
-    }
+    clearT = Math.max(0, clearT - dt);
     return;
   }
 
@@ -2351,7 +2489,8 @@ function update(dt) {
 
   // 护盾回复
   if (player.shieldMax > 0) {
-    player.shield = Math.min(player.shieldMax, player.shield + player.shieldRegen * dt);
+    player.shieldRegenDelay = Math.max(0, (player.shieldRegenDelay || 0) - dt);
+    if (player.shieldRegenDelay <= 0) player.shield = Math.min(player.shieldMax, player.shield + player.shieldRegen * dt);
   }
   if (player.wardMax > 0) {
     player.ward = Math.min(player.wardMax, player.ward + player.wardRegen * dt);
@@ -2364,9 +2503,9 @@ function update(dt) {
       if (w.id === 'bubble' && def.pulse > 0) {
         w.timer -= dt;
         if (w.timer <= 0) {
-          w.timer = (2.3 - w.level * 0.12) / atkSpeedMul;
+          w.timer = (3.4 - w.level * 0.10) / atkSpeedMul;
           for (let pulse = 0; pulse < def.pulse; pulse++) {
-            const pulseDmg = (8 + w.level * 4) * dmgMul;
+            const pulseDmg = (4 + w.level * 2) * dmgMul;
             for (const e of enemies) {
               if (!e.dead && dist(player, e) < def.pulseRange + e.r) damageEnemy(e, pulseDmg);
             }
@@ -2922,6 +3061,10 @@ function render() {
 
   if (state === 'menu') {
     withInkSeed(0x4d454e55, drawMenu);
+    return;
+  }
+  if (state === 'codex') {
+    withInkSeed(0x434f4445, drawCodex);
     return;
   }
 
@@ -4922,7 +5065,7 @@ function drawHUD() {
     roughBox(ctx, hpX + 1, 31, barrierW * shieldPart * (player.shieldMax > 0 ? clamp(player.shield / player.shieldMax, 0, 1) : 0), 5, COL.purple, null, 0);
     roughBox(ctx, hpX + 1 + barrierW * shieldPart, 31, barrierW * wardPart * (player.wardMax > 0 ? clamp(player.ward / player.wardMax, 0, 1) : 0), 5, '#75c8d2', null, 0);
   }
-  text('Lv.' + player.level, hpX + hpW + 6, 28, 8, COL.ink, 'left', true);
+  text('角色 Lv.' + player.level, hpX + hpW + 6, 28, 8, COL.ink, 'left', true);
 
   roughBox(ctx, hpX, 41, hpW, 5, '#eadfcf', COL.ink, 0.8);
   roughBox(ctx, hpX + 1, 42, (hpW - 2) * clamp(player.xp / player.xpNeed, 0, 1), 3, COL.gold, null, 0);
@@ -4951,8 +5094,9 @@ function drawHUD() {
       } else {
         roughCircle(ctx, bx + 5, by + 7, 2.2, COL.gold, null, 0, 6);
       }
-      roughCircle(ctx, bx + 33, by + 7, 6, def.color, COL.ink, 0.8, 7);
-      text(String(w.level), bx + 33, by + 3.4, 6, COL.white, 'center', true);
+      const levelColor = w.level >= WEAPON_MAX_LEVEL ? COL.goldDark : (w.level >= WEAPON_EVOLVE_LEVEL ? COL.blue : def.color);
+      roughBox(ctx, bx + 23, by + 3, 15, 9, levelColor, COL.ink, 0.65);
+      text('L' + w.level, bx + 30.5, by + 4.1, 5.3, COL.white, 'center', true);
       text(def.short, bx + 19.5, by + 29, 6, COL.ink, 'center', true);
     } else {
       roughCircle(ctx, bx + 19.5, by + 17, 8, null, '#b7aa98', 1, 8);
@@ -5119,8 +5263,17 @@ function drawOverlays() {
   if (levelClear) {
     ctx.fillStyle = 'rgba(253,246,228,0.86)';
     ctx.fillRect(0, 0, VW, VH);
-    text('关 卡 完 成', VW / 2, 122, 26, COL.goldDark, 'center', true, -0.02);
-    text('第 ' + (levelIdx + 1) + ' 关 · ' + currentMap.name, VW / 2, 162, 11, COL.ink, 'center');
+    const titleY = portraitLayout ? VH / 2 - 102 : 106;
+    text('关 卡 完 成', VW / 2, titleY, 26, COL.goldDark, 'center', true, -0.02);
+    text('第 ' + (levelIdx + 1) + ' 关 · ' + currentMap.name, VW / 2, titleY + 42, 11, COL.ink, 'center');
+    if (clearT <= 0) {
+      const hasStory = runMode === 'story' && (levelIdx + 1) % 4 === 0;
+      roughBox(ctx, levelNextBtn.x, levelNextBtn.y, levelNextBtn.w, levelNextBtn.h, COL.gold, COL.ink, 1.8);
+      text(hasStory ? '查看章节剧情' : '进入下一关', levelNextBtn.x + levelNextBtn.w / 2, levelNextBtn.y + 10, 13, COL.ink, 'center', true);
+      roughBox(ctx, levelHomeBtn.x, levelHomeBtn.y, levelHomeBtn.w, levelHomeBtn.h, '#fffdf8', COL.ink, 1.6);
+      text('退出到首页', levelHomeBtn.x + levelHomeBtn.w / 2, levelHomeBtn.y + 10, 13, COL.ink, 'center', true);
+      text('Enter / 点击继续 · Esc 返回首页', VW / 2, levelNextBtn.y + 54, 8, COL.inkSoft, 'center');
+    }
     return;
   }
   if (state === 'play' && bossIntroT > 0) {
@@ -5484,7 +5637,8 @@ function drawStartButtons() {
     return;
   }
 
-  text('继续第 ' + suspendedRun.level + ' 关', startBtn.x + startBtn.w / 2, startBtn.y + (portraitLayout ? 8 : 7), portraitLayout ? 15 : 14, COL.ink, 'center', true);
+  const continueLabel = suspendedRun.pendingStory != null ? '继续章节剧情' : ('继续第 ' + suspendedRun.level + ' 关');
+  text(continueLabel, startBtn.x + startBtn.w / 2, startBtn.y + (portraitLayout ? 8 : 7), portraitLayout ? 15 : 14, COL.ink, 'center', true);
   const mm = Math.floor(suspendedRun.seconds / 60);
   const ss = String(suspendedRun.seconds % 60).padStart(2, '0');
   text(suspendedRun.mapName + ' · ' + mm + ':' + ss, startBtn.x + startBtn.w / 2, startBtn.y + (portraitLayout ? 31 : 28), 7, COL.inkSoft, 'center', true);
@@ -5700,6 +5854,177 @@ function drawMenuSceneBackdrop(map, now) {
   });
 }
 
+function drawCodexMonsterGlyph(type, x, y, r) {
+  ctx.save();
+  if (type === 'bat') {
+    fillPoly(ctx, [[x, y], [x - r * 1.4, y - r * 0.7], [x - r, y + r * 0.5]], COL.inkPurpleDark);
+    fillPoly(ctx, [[x, y], [x + r * 1.4, y - r * 0.7], [x + r, y + r * 0.5]], COL.inkPurpleDark);
+    roughCircle(ctx, x, y, r * 0.62, COL.inkPurpleMid, COL.ink, 1.3, 8);
+  } else if (type === 'ink') {
+    roughCircle(ctx, x, y, r * 1.15, '#41314d', COL.ink, 1.8, 10);
+  } else if (type === 'shooter') {
+    roughCircle(ctx, x, y, r, '#69476f', COL.ink, 1.6, 9);
+    roughLine(ctx, x + r * 0.45, y, x + r * 1.45, y - r * 0.35, '#37283e', 3);
+  } else if (type === 'splitter') {
+    roughCircle(ctx, x, y, r, '#654a75', COL.ink, 1.6, 9);
+    roughLine(ctx, x, y - r, x, y + r, '#c49ad3', 1.6);
+  } else if (type === 'jumper') {
+    roughEllipse(ctx, x, y + 2, r, r * 0.8, '#8b5f95', COL.ink, 1.6, 9);
+    roughLine(ctx, x, y - r, x, y - r * 1.65, COL.goldDark, 1.5);
+    fillPoly(ctx, [[x, y - r * 1.85], [x - 4, y - r * 1.45], [x + 4, y - r * 1.45]], COL.gold);
+  } else {
+    roughCircle(ctx, x, y, r, type === 'eliteShooter' ? '#5d4669' : '#563b67', COL.ink, 1.7, 9);
+    if (type === 'eliteShooter') fillPoly(ctx, [[x - r, y - r * 0.65], [x - r, y - r * 1.3], [x - r * 0.35, y - r], [x, y - r * 1.5], [x + r * 0.35, y - r], [x + r, y - r * 1.3], [x + r, y - r * 0.65]], COL.gold);
+  }
+  roughCircle(ctx, x - r * 0.32, y - r * 0.15, Math.max(1.5, r * 0.2), COL.white, COL.ink, 0.7, 6);
+  roughCircle(ctx, x + r * 0.32, y - r * 0.15, Math.max(1.5, r * 0.2), COL.white, COL.ink, 0.7, 6);
+  ctx.restore();
+}
+
+function drawCodexMyth(map, boss, x, y) {
+  const previousMap = currentMap;
+  currentMap = map;
+  const type = boss ? 'boss' : 'eliteShooter';
+  const visual = enemyVisual(type, !boss, boss);
+  const e = {
+    type, elite: !boss, boss, rangedElite: !boss,
+    r: boss ? 25 : 18, t: performance.now() / 1000, phase: 0,
+    tele: 0, fireCd: 2, color: visual.color, dark: visual.dark,
+    hi: visual.hi, accent: visual.accent,
+  };
+  try {
+    if (boss) drawMythBoss(e, x, y);
+    else drawMythMinion(e, x, y);
+  } finally {
+    currentMap = previousMap;
+  }
+}
+
+function drawCodexChrome(title) {
+  const tile = getPaperTile();
+  for (let x = 0; x < VW; x += TILE_P) for (let y = 0; y < VH; y += TILE_P) ctx.drawImage(tile, x, y);
+  ctx.fillStyle = 'rgba(253,246,228,0.72)';
+  ctx.fillRect(0, 0, VW, VH);
+  roughBox(ctx, codexBackBtn.x, codexBackBtn.y, codexBackBtn.w, codexBackBtn.h, '#fffdf8', COL.ink, 1.3);
+  text('← 首页', codexBackBtn.x + codexBackBtn.w / 2, codexBackBtn.y + 6, 10, COL.ink, 'center', true);
+  for (const kind of ['weapons', 'monsters']) {
+    const r = codexTabBtn(kind);
+    const active = codexKind === kind;
+    roughBox(ctx, r.x, r.y, r.w, r.h, active ? COL.gold : '#fffdf8', COL.ink, active ? 1.8 : 1.2);
+    text(kind === 'weapons' ? '武器图鉴' : '怪物图鉴', r.x + r.w / 2, r.y + 6, 11, COL.ink, 'center', active);
+  }
+  text(title, VW / 2, portraitLayout ? 84 : 56, portraitLayout ? 18 : 17, COL.ink, 'center', true);
+}
+
+function drawCodexNavigation() {
+  const count = codexPageCount();
+  roughBox(ctx, codexPrevBtn.x, codexPrevBtn.y, codexPrevBtn.w, codexPrevBtn.h, '#fffdf8', COL.ink, 1.2);
+  roughBox(ctx, codexNextBtn.x, codexNextBtn.y, codexNextBtn.w, codexNextBtn.h, '#fffdf8', COL.ink, 1.2);
+  text('← 上一个', codexPrevBtn.x + codexPrevBtn.w / 2, codexPrevBtn.y + 7, 9, COL.ink, 'center', true);
+  text('下一个 →', codexNextBtn.x + codexNextBtn.w / 2, codexNextBtn.y + 7, 9, COL.ink, 'center', true);
+  text((codexPage + 1) + ' / ' + count + ' · 方向键翻页', VW / 2, VH - 31, 8, COL.inkSoft, 'center');
+}
+
+function drawWeaponCodex() {
+  const ids = Object.keys(WEAPON_DEFS);
+  const id = ids[codexPage % ids.length];
+  const def = WEAPON_DEFS[id];
+  drawCodexChrome(def.name);
+
+  const iconX = portraitLayout ? VW / 2 : 92;
+  const iconY = portraitLayout ? 126 : 106;
+  roughCircle(ctx, iconX, iconY, portraitLayout ? 30 : 32, tint(def.color, 0.15), def.color, 1.6, 12);
+  drawWeaponIcon(id, iconX, iconY, portraitLayout ? 28 : 30);
+  const infoX = portraitLayout ? VW / 2 : 142;
+  const infoAlign = portraitLayout ? 'center' : 'left';
+  text(WEAPON_KIND_NAMES[def.kind], infoX, portraitLayout ? 162 : 83, 9, def.color, infoAlign, true);
+  text(WEAPON_GUIDES[id], infoX, portraitLayout ? 178 : 101, portraitLayout ? 8.5 : 9, COL.inkSoft, infoAlign);
+  if (id === 'bubble') text('平衡后：Lv.6 为 48 护盾 / 1.6 每秒回复，受击后暂停回复 4 秒', infoX, portraitLayout ? 194 : 119, portraitLayout ? 7.2 : 8, COL.red, infoAlign, true);
+
+  for (let i = 0; i < WEAPON_MAX_LEVEL; i++) {
+    const lv = i + 1;
+    const evolved = lv === WEAPON_EVOLVE_LEVEL;
+    const finalForm = lv === WEAPON_MAX_LEVEL;
+    let x, y, w, h;
+    if (portraitLayout) {
+      const step = Math.min(62, Math.max(44, (VH - 272) / 6));
+      x = 24; y = 206 + i * step; w = VW - 48; h = step - 7;
+    } else {
+      const col = i >= 3 ? 1 : 0;
+      const row = i % 3;
+      x = 160 + col * 226; y = 132 + row * 58; w = 210; h = 49;
+    }
+    const accent = finalForm ? COL.goldDark : (evolved ? COL.blue : def.color);
+    roughBox(ctx, x, y, w, h, finalForm ? '#fff1c8' : evolved ? '#eaf3f5' : '#fffaf0', accent, evolved || finalForm ? 1.8 : 1.1);
+    roughBox(ctx, x + 7, y + 8, 44, 22, accent, COL.ink, 0.7);
+    text('Lv.' + lv, x + 29, y + 13, 9, COL.white, 'center', true);
+    text((evolved ? '觉醒 · ' : finalForm ? '终极 · ' : '') + WEAPON_FORMS[id][i], x + 59, y + 7, portraitLayout ? 10 : 9.5, COL.ink, 'left', true);
+    text(WEAPON_FORM_TRAITS[id][i], x + 59, y + 26, portraitLayout ? 8.5 : 8, accent, 'left');
+  }
+  drawCodexNavigation();
+}
+
+function drawMonsterCodex() {
+  if (codexPage === 0) {
+    drawCodexChrome('普通怪物与精英');
+    for (let i = 0; i < MONSTER_BASE_INFO.length; i++) {
+      const info = MONSTER_BASE_INFO[i];
+      let x, y, w, h;
+      if (portraitLayout) {
+        const step = Math.min(62, Math.max(50, (VH - 168) / 7));
+        x = 22; y = 98 + i * step; w = VW - 44; h = step - 7;
+      } else {
+        const col = i >= 4 ? 1 : 0;
+        const row = i >= 4 ? i - 4 : i;
+        x = 38 + col * 292; y = 78 + row * 60; w = 272; h = 50;
+      }
+      roughBox(ctx, x, y, w, h, '#fffaf0', COL.ink, 1.1);
+      drawCodexMonsterGlyph(info.type, x + 28, y + 25, 13);
+      text(info.name + ' · ' + info.role, x + 53, y + 8, 9.5, COL.ink, 'left', true);
+      text(info.desc, x + 53, y + 27, 7.5, COL.inkSoft, 'left');
+    }
+    drawCodexNavigation();
+    return;
+  }
+
+  const map = MAPS[codexPage - 1];
+  const elite = ELITE_MYTHS[map.id];
+  const attacks = (BOSS_ATTACKS[map.id] || []).map((id) => BOSS_ATTACK_LABELS[id] || id).join(' · ');
+  drawCodexChrome('第 ' + codexPage + ' 章 · ' + map.name);
+  const leftX = portraitLayout ? VW / 2 : 175;
+  const rightX = portraitLayout ? VW / 2 : 465;
+  const bossY = portraitLayout ? 135 : 138;
+  const eliteY = portraitLayout ? 326 : 138;
+
+  roughBox(ctx, portraitLayout ? 24 : 48, portraitLayout ? 96 : 76, portraitLayout ? VW - 48 : 254, portraitLayout ? 180 : 220, '#fff8e8', map.doodle, 1.6);
+  drawCodexMyth(map, true, leftX, bossY);
+  text(map.boss, leftX, portraitLayout ? 170 : 184, 17, COL.ink, 'center', true);
+  text(BOSS_TITLES[map.id], leftX, portraitLayout ? 194 : 209, 9, map.doodle, 'center', true);
+  text('招式：' + attacks, leftX, portraitLayout ? 216 : 231, portraitLayout ? 8 : 7.5, COL.inkSoft, 'center');
+  text('地图机制：' + map.mechDesc, leftX, portraitLayout ? 239 : 251, 8, COL.ink, 'center', true);
+
+  roughBox(ctx, portraitLayout ? 24 : 338, portraitLayout ? 286 : 76, portraitLayout ? VW - 48 : 254, portraitLayout ? 168 : 220, '#fff8e8', map.doodle, 1.6);
+  drawCodexMyth(map, false, rightX, eliteY);
+  text(elite.name, rightX, portraitLayout ? 358 : 184, 15, COL.ink, 'center', true);
+  text('精英技能 · ' + elite.skill, rightX, portraitLayout ? 384 : 210, 9, map.doodle, 'center', true);
+  text('冷却约 ' + elite.cd.toFixed(1) + ' 秒', rightX, portraitLayout ? 407 : 232, 8, COL.inkSoft, 'center');
+  text('普通怪也会继承本地图的颜色、材质与配饰', rightX, portraitLayout ? 430 : 253, portraitLayout ? 7.5 : 7.2, COL.inkSoft, 'center');
+  drawCodexNavigation();
+}
+
+function drawCodex() {
+  if (codexKind === 'weapons') drawWeaponCodex();
+  else drawMonsterCodex();
+}
+
+function drawMenuCodexButtons() {
+  for (const kind of ['weapons', 'monsters']) {
+    const r = menuCodexBtn(kind);
+    roughBox(ctx, r.x, r.y, r.w, r.h, '#fffaf0', COL.ink, 1.2);
+    text(kind === 'weapons' ? '⌁ 武器图鉴' : '♟ 怪物图鉴', r.x + r.w / 2, r.y + (portraitLayout ? 7 : 6), portraitLayout ? 10 : 9, COL.ink, 'center', true);
+  }
+}
+
 function drawMenu() {
   const now = performance.now() / 1000;
   const nowMs = now * 1000;
@@ -5721,6 +6046,7 @@ function drawMenu() {
   drawMenuSlime(300, 182 + Math.sin(now * 2 + 1) * 3, look.x, look.y, menuReactionStrength(nowMs, 300, 182));
   drawMenuPlayer(400, 176 + Math.sin(now * 2 + 2) * 3, look.x, look.y, menuReactionStrength(nowMs, 400, 176));
   drawMenuClickFx(nowMs);
+  drawMenuCodexButtons();
 
   text('纸 片 幸 存 者', VW / 2, 62, 40, COL.ink, 'center', true, -0.02);
   roughLine(ctx, VW / 2 - 150, 116, VW / 2 + 150, 114, COL.ink, 2);
@@ -5773,6 +6099,7 @@ function drawMenuPortrait(now) {
   drawMenuSlime(168, 211 + Math.sin(now * 2 + 1) * 3, look.x, look.y, menuReactionStrength(nowMs, 168, 211));
   drawMenuPlayer(250, 205 + Math.sin(now * 2 + 2) * 3, look.x, look.y, menuReactionStrength(nowMs, 250, 205));
   drawMenuClickFx(nowMs);
+  drawMenuCodexButtons();
 
   roughBox(ctx, nameBtn.x, nameBtn.y, nameBtn.w, nameBtn.h, '#fffdf8', COL.ink, 1.2);
   text('昵称 · ' + playerName, VW / 2, nameBtn.y + 5, 10, COL.ink, 'center', true);
@@ -5993,6 +6320,7 @@ if (AUTO_START) {
     const storyIndex = clamp(Number(FORCE_STORY_PREVIEW) || 0, -1, CHAPTER_STORIES.length - 1);
     showStoryChapter(storyIndex);
   }
+  if (FORCE_LEVEL_CLEAR_PREVIEW) completeLevel();
 }
 requestAnimationFrame(frame);
 
@@ -6018,6 +6346,15 @@ window.__ps = {
   get fourPhase() { return fourPhase; },
   jumpLevel(n) { levelIdx = n - 1; startLevel(); },
   next: nextLevel,
+  completeLevel,
+  openCodex,
+  setWeaponLevel(id, level) {
+    let w = weapons.find((weapon) => weapon.id === id);
+    if (!w && WEAPON_DEFS[id]) { addWeapon(id); w = weapons.find((weapon) => weapon.id === id); }
+    if (!w) return;
+    w.level = clamp(Number(level) || 1, 1, WEAPON_MAX_LEVEL);
+    if (w.id === 'bubble') syncShield();
+  },
   showStory(n) { showStoryChapter(clamp(Number(n) || 0, -1, CHAPTER_STORIES.length - 1)); },
   get storyChapter() { return storyChapter; },
   setEnch(id, lv) { setEnchantment(id, lv); },

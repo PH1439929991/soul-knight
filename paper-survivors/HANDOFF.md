@@ -1,7 +1,7 @@
 # 交接文档 · HANDOFF
 
 > 给下一个接手的人（或 AI）看的上下文。**先读这份，再读 DESIGN.md，最后看 game.js。**
-> 最后更新：2026-11-17
+> 最后更新：2026-11-18
 
 ---
 
@@ -24,7 +24,7 @@ paper-survivors/
   game.js         全部游戏逻辑（约 1500 行，单文件）
   design/         v1 角色、HUD、地图风格稿与视觉规范
   README.md       玩家向说明 + 功能清单
-  DESIGN.md       设计文档（36 关 / 武器 / 附魔 / 地图 / 平衡曲线）
+  DESIGN.md       设计文档（44 关 / 武器 / 附魔 / 地图 / 平衡曲线）
   HANDOFF.md      ← 本文件
   shots/          截图
 soul-knight-proto/     另一个项目（元气地牢，地牢 roguelike）
@@ -43,15 +43,9 @@ cd paper-survivors
 python3 -m http.server 8080   # 或直接双击 index.html
 ```
 
-**部署（Cloudflare Pages，直接上传）**
-```bash
-cd paper-survivors
-npx wrangler pages deploy . --project-name=paper-survivors --branch=main --commit-dirty=true
-```
-需要 Cloudflare API Token（权限：Account → Cloudflare Pages → Edit）。
-项目 `paper-survivors` 已存在，重复部署链接不变。
+**部署（Cloudflare Pages，Git 自动部署）**
 
-> 注意：本仓库 `paper-survivors` 在 Cloudflare 上是「直接上传」类型，不是 Git 自动部署。
+提交并推送 `main` 分支后，Cloudflare Pages 会从 `paper-survivors/` 自动重新部署，线上链接保持为 `https://paper-survivors.pages.dev`。
 
 ---
 
@@ -72,7 +66,7 @@ npx wrangler pages deploy . --project-name=paper-survivors --branch=main --commi
 ```js
 state: 'menu'|'play'|'levelup'|'paused'|'dead'|'win'
 runMode: 'story'|'endless'
-levelIdx: 0 起，story 到 35（36 关）
+levelIdx: 0 起，story 到 43（44 关）
 currentMap: MAPS[i]（每关按 levelIdx 选，无尽随机）
 player: {hp,maxHp,speed,inv,magnet,level,xp,xpNeed,shield,shieldMax,shieldRegen,aim}
 weapons: [{id,level,timer}] 最多 4 把
@@ -89,7 +83,7 @@ startGame(mode) → newRun() → startLevel()
 startLevel(): 重置本关敌人/计时，保留 build；按 levelIdx 选 currentMap；initFields()
 update(): 时间到 120s 或 90 杀（≥60s）→ 若 (levelIdx+1)%4===0 刷 Boss，否则 completeLevel()
 击杀 Boss → levelClear → nextLevel() → levelIdx++ → startLevel()
-剧情 36 关打完 → state='win'；无尽则一直继续
+剧情 44 关打完 → state='win'；无尽则一直继续
 ```
 
 ### 武器（WEAPON_DEFS）
@@ -154,10 +148,12 @@ __ps.fields / __ps.hazards / __ps.fourPhase
 - 核心循环：自动攻击、经验、升级三选一、7 种怪、精英、Boss、死亡/通关结算
 - 4 武器槽 + 9 武器 + 5 被动道具 + 5 类互斥主附魔 + 7 类可叠加辅助附魔 + 7 属性卡
 - 三档难度（简单/精英/冒险家）
-- 剧情 36 关（9 地图 × 4 关，每 4 关 Boss），build 跨关保留
+- 剧情 44 关（11 地图 × 4 关，每 4 关 Boss），build 跨关保留
+- 故事主线为“救母亲”：`STORY_PROLOGUE` 与 `CHAPTER_STORIES` 组成序章 + 11 张章节卡；每逢 `(levelIdx + 1) % 4 === 0` 的 Boss 关结束进入 `state='story'`，玩家确认后才执行 `nextLevel()`。终章卡确认后进入胜利页
+- `BOSS_TITLES` / `BOSS_OBJECTIVES` 为每个 Boss 提供身份称号与当前寻母目标；`bossIntroT` 控制 Boss 登场横幅。调试可用 `&story=-1|0..10`
 - 无尽模式（随机地图，每 4 关 Boss）
-- 9 张地图各有机制（溜怪）
-- 9 个 Boss 有各自招式序列，名字用希腊神话
+- 11 张地图各有机制（溜怪）
+- 11 个 Boss 有各自招式序列；雪山保留北欧巨狼芬里尔，猩红之地由希腊战神阿瑞斯收尾
 - 纸雕角色 v1：铅笔剑士 + 紫黑墨水敌人家族
 - HUD v1：头像信息岛、生命/护盾/经验、图标武器槽、计时进度、Boss 条、图标升级卡
 - 森林纸雕场景 v1：树冠、树桩、岩石、花朵与动态地形
@@ -166,10 +162,15 @@ __ps.fields / __ps.hazards / __ps.fourPhase
 - Web Audio 轻快循环背景音乐，支持主菜单按钮和 M 键开关
 - 程序化攻击、受击、拾取、升级、Boss 与胜利提示音效
 - 可编辑昵称，默认「艾志恒」，使用 localStorage 保存；Q 版昵称牌跟随角色移动
-- 暂停菜单支持继续游戏与返回主页面
+- 主页角色追随鼠标/触点视线，点击触发纸屑星芒、涟漪和角色弹跳反应
+- 首页已恢复最初的纸张底纹、手绘太阳与星星装饰；`MENU_SEASONS_ENABLED = false`，因此四季图片不预加载、不随机展示，人物也不再绘制季节装扮。实验素材及绘制函数暂时保留，便于未来单独设计后再启用
+- `menu-scenes.html` 是十一地图首页场景草案总览，十一个 iframe 通过 `?menuScene=<mapId>` 调用 `drawMenuSceneBackdrop()`：雪山增加冰峰/雪松/飘雪/风痕，猩红之地增加血月/枯枝/红雾；`drawMenuMapAccessory()` 只叠加配饰，不改变英雄与史莱姆基础造型；默认首页不会启用这些预览层
+- 暂停菜单支持继续游戏与返回主页面；返回后通过 `suspendedRun` 保留完整内存战斗状态，主页可继续原局或重开
+- `Music.tick()` 会按 `menu` / `game` 切换音乐场景；首页是 70 BPM 原创千禧年华语 R&B 月夜主题，由 `pluckNote()` 尼龙弦音色、七九和弦、下行低音、38ms 摇摆切分、轻鼓点与反馈延迟组成，不采样或复刻现有歌曲
+- `MenuTrack` 会优先加载 `local-audio/menu-theme.mp3`，首页循环、进入战斗时 1.9 秒渐弱后暂停，返回首页时 0.9 秒渐入；加载失败则继续使用原创 Web Audio 主题。当前确认发布的音乐文件随仓库和 Cloudflare Pages 一并部署
 - 手机竖屏已采用独立逻辑视口：宽度固定为 360，纵向按设备比例扩展至 560—780；人物尺寸不缩小，只减少横向视野。主菜单、HUD、升级三选一和暂停框均有竖屏排版，横屏继续使用 640×360
-- 九张地图均有差异化主题底纸、立体纸层地形与场景道具
-- 八张后续地图均已补齐专属物件族：荒漠枯树/风滚草，沙漠砂岩/龙舌兰，沼泽红树林/睡莲，海洋海草/海葵，火山玄武岩/熔岩口，炼狱焦木/黑曜碑/紫红深渊，天宫云台/神龛/金边天门/金灯，风林火山腐化四象物件
+- 十一张地图均有差异化主题底纸、立体纸层地形与场景道具
+- 后续地图均已补齐主题物件族；雪山复用冰晶/冰柱/积雪岩，猩红之地复用焦木/黑曜碑/血色晶体并改为对应色板
 - 普通怪、精英与 Boss 使用 `enemyThemePalette()` / `drawEnemyThemeDetails()` 按当前地图切换色板、材质与附属特征；行为轮廓保持不变
 - `drawAmbientScene()` 按地图绘制低透明度、低频率的边缘环境细节；`drawHazards()` 按机制改用日轮、裂隙、火焰、折线雷电、波墙等非通用圆形表现
 - 火山与炼狱已拆分为自然熔岩和超自然深渊两套视觉；终局地图使用暗色四象、低频雷闪及常态弱显/雷光增强的巨物头颅与巨爪剪影
@@ -184,7 +185,7 @@ __ps.fields / __ps.hazards / __ps.fourPhase
 - 状态特效：`drawFrostStatus()` 根据 `e.slowT` 在普通怪/精英/Boss 上绘制冰壳、冰晶和雪花；`combatFx` / `drawCombatEffect()` 管理爆裂炸弹、纸花、冲击波与碎屑。调试分别使用 `&ench=frost` 或 `&ench=boom`
 - `setEnchantment()` 统一处理主附魔互斥：`ward` / `poison` / `frost` / `boom` / `lightning` 五选一；升级池在选定后只保留当前主附魔的升级，不再推荐其他主附魔。守御结界使用独立再生值只拦远程攻击；雷罚封印由命中触发纵向落雷，对范围敌人造成雷伤并暂停移动、接触伤害和远程施法，普通怪禁锢时间随等级增长，Boss 使用缩短版控制
 - 辅助附魔现含 `deflect` / `pierce` / `ricochet` / `split` / `leech` / `knockback` / `homing`；远程命中循环负责弹射、分裂与击退，子弹更新负责追踪，`damageEnemy()` 负责吸墨回血。可用 `&ench=homing,split,ricochet` 组合预览
-- 新增 `eliteShooter` 远程精英：与近战精英交替登场，保持中远距离、0.55 秒瞄准预警、三向齐射，弹体会跟随九张地图切换叶片/水晶/金矛/火星等主题；调试可用 `&elite=ranged&cluster=1`
+- `ELITE_MYTHS` 为十一张地图配置精英名称、技能、射程与冷却；`castEliteSkill()` 负责三首噬弹、牛角重矛、谜阵十字、五首毒雨、触腕环射、双蛇熔痕、孵化援军、独眼天雷、四色轮转、寒风狼嚎和血月军阵。远程与近战精英交替登场但都会释放地图专属技能；调试可用 `&elite=ranged&cluster=1`
 - `drawMythMinion()` / `drawMythBoss()` 已替换实机通用敌人轮廓；开发预览可用 `?map=forest&autostart=1&boss=1` 强制显示对应地图 Boss
 - 战斗视觉 v1.2：`combat-gallery.html` / `combat-gallery.js` 是武器与怪物层级的动画审阅板；实机美工刀使用多层月牙斩与命中纸屑，远程怪拥有预警虚线/枪口星芒/墨弹，精英拥有金色徽章/血条/冲击环，Boss HUD 显示最近招式并在冲撞前绘制蓄力方向线
 - `melee-ui.html` / `melee-ui.js` 是近战「斩」专项视觉提案：包含青刃普通斩、金刃暴击斩、墨裂终结斩三种可切换方案，以及蓄势/切开/命中停顿/纸屑收刀四段循环；当前用于确认设计，尚未把完整节奏同步到实机
@@ -208,13 +209,13 @@ __ps.fields / __ps.hazards / __ps.fourPhase
 - 敌人没有寻路，直线追 + 分离力，会被地形/机制卡住（这是有意的）
 - `damageEnemy` 可能在遍历敌人时触发分裂（splitter），遍历用倒序或允许跳过
 - 主循环固定 1/60 步长，`dt` 上限 0.25，掉帧不会加速
-- 部署用直接上传，不是 Git 自动部署
+- 推送 `main` 分支后由 Cloudflare Pages 自动部署 `paper-survivors/`
 
 ---
 
 ## 9. 设计文档
 
-- `DESIGN.md`：完整设计（36 关结构、地图、武器池、附魔、平衡公式、成长曲线）
+- `DESIGN.md`：完整设计（44 关结构、地图、武器池、附魔、平衡公式、成长曲线）
 - `README.md`：玩家向说明
 
 设计原则：**成长曲线要能拉开差距**——好 build 靠协同和融合超线性增长，乱选 8–12 关被敌人血量曲线甩开。

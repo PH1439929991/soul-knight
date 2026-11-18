@@ -88,12 +88,16 @@ const PREVIEW_MAP_ID = new URLSearchParams(window.location.search).get('map');
 const AUTO_START = new URLSearchParams(window.location.search).get('autostart') === '1';
 const BACKGROUND_PREVIEW = new URLSearchParams(window.location.search).get('background') === '1';
 const FORCE_BOSS_PREVIEW = new URLSearchParams(window.location.search).get('boss') === '1';
+const FORCE_BOSS_INTRO_PREVIEW = new URLSearchParams(window.location.search).get('bossIntro') === '1';
 const FORCE_WEAPON_PREVIEW = new URLSearchParams(window.location.search).get('weapon');
 const FORCE_WEAPON_LEVEL = clamp(Number(new URLSearchParams(window.location.search).get('weaponLevel')) || 1, 1, 6);
 const FORCE_LEVELUP_PREVIEW = new URLSearchParams(window.location.search).get('levelup') === '1';
 const FORCE_ENCHANT_PREVIEW = (new URLSearchParams(window.location.search).get('ench') || '').split(',').filter(Boolean);
 const FORCE_ELITE_PREVIEW = new URLSearchParams(window.location.search).get('elite');
 const FORCE_CLUSTER_PREVIEW = new URLSearchParams(window.location.search).get('cluster') === '1';
+const FORCED_MENU_SEASON = new URLSearchParams(window.location.search).get('season');
+const MENU_SCENE_ID = new URLSearchParams(window.location.search).get('menuScene');
+const FORCE_STORY_PREVIEW = new URLSearchParams(window.location.search).get('story');
 
 function loadLocal(key, fallback) {
   try {
@@ -106,6 +110,69 @@ function loadLocal(key, fallback) {
 
 function saveLocal(key, value) {
   try { localStorage.setItem(key, value); } catch (_) { /* 隐私模式下忽略 */ }
+}
+
+const menuInteraction = {
+  pointerX: LANDSCAPE_VW / 2,
+  pointerY: LANDSCAPE_VH / 2,
+  focusX: LANDSCAPE_VW / 2,
+  focusY: LANDSCAPE_VH / 2,
+  lockUntil: 0,
+  clicks: [],
+};
+
+const MENU_SEASONS = [
+  { id: 'spring', image: 'assets/menu-seasons/spring-child.png' },
+  { id: 'summer', image: 'assets/menu-seasons/summer-child.png' },
+  { id: 'autumn', image: 'assets/menu-seasons/autumn-child.png' },
+  { id: 'winter', image: 'assets/menu-seasons/winter-child.png' },
+];
+const MENU_SEASONS_ENABLED = false;
+const menuSeasonImages = {};
+for (const season of MENU_SEASONS_ENABLED ? MENU_SEASONS : []) {
+  const image = new Image();
+  image.src = season.image;
+  menuSeasonImages[season.id] = image;
+}
+let menuSeasonIndex = -1;
+let menuSeasonSeed = 1;
+
+function rerollMenuSeason(requested) {
+  const forced = requested || FORCED_MENU_SEASON;
+  const forcedIndex = MENU_SEASONS.findIndex((season) => season.id === forced);
+  let next = forcedIndex;
+  if (next < 0) {
+    next = Math.floor(Math.random() * MENU_SEASONS.length);
+    if (next === menuSeasonIndex) next = (next + 1 + Math.floor(Math.random() * (MENU_SEASONS.length - 1))) % MENU_SEASONS.length;
+  }
+  menuSeasonIndex = next;
+  menuSeasonSeed = (Math.random() * 0xffffffff) >>> 0;
+}
+
+function currentMenuSeason() {
+  return MENU_SEASONS[Math.max(0, menuSeasonIndex)];
+}
+
+rerollMenuSeason();
+
+function updateMenuPointer(p) {
+  menuInteraction.pointerX = p.x;
+  menuInteraction.pointerY = p.y;
+  if (performance.now() >= menuInteraction.lockUntil) {
+    menuInteraction.focusX = p.x;
+    menuInteraction.focusY = p.y;
+  }
+}
+
+function reactToMenuClick(p) {
+  const now = performance.now();
+  menuInteraction.pointerX = p.x;
+  menuInteraction.pointerY = p.y;
+  menuInteraction.focusX = p.x;
+  menuInteraction.focusY = p.y;
+  menuInteraction.lockUntil = now + 950;
+  menuInteraction.clicks.push({ x: p.x, y: p.y, born: now, seed: Math.random() * 1000 });
+  if (menuInteraction.clicks.length > 5) menuInteraction.clicks.shift();
 }
 
 let playerName = loadLocal(NICKNAME_KEY, '艾志恒');
@@ -146,16 +213,118 @@ nameEditor.addEventListener('keydown', (e) => {
   }
 });
 
-const MUSIC_MELODY = [72, 76, 79, 76, 74, 77, 81, 77, 72, 76, 81, 79, 74, 77, 79, 76];
-const MUSIC_BASS = [48, 48, 53, 55];
+const GAME_MUSIC_MELODY = [72, 76, 79, 76, 74, 77, 81, 77, 72, 76, 81, 79, 74, 77, 79, 76];
+const GAME_MUSIC_BASS = [48, 48, 53, 55];
+
+// 原创首页主题：70 BPM 的千禧年华语 R&B 情歌氛围。
+// 和弦、旋律均为本项目原创，不对现有歌曲做采样或复刻。
+const MENU_MUSIC_CHORDS = [
+  [40, 52, 55, 59, 66], // Em9
+  [36, 48, 52, 55, 59], // Cmaj7
+  [47, 55, 59, 62, 69], // Gadd9/B
+  [45, 50, 54, 57, 64], // D6/A
+  [45, 57, 60, 64, 67], // Am7
+  [47, 54, 59, 64, 66], // B7sus4
+  [36, 48, 52, 55, 59], // Cmaj7
+  [35, 47, 51, 57, 62], // B7(b9)
+];
+const MENU_MUSIC_LEAD = [
+  null, 71, null, null, 74, null, 71, null,
+  null, 67, null, 69, null, null, 71, null,
+  null, 74, null, 76, null, 74, null, 71,
+  null, null, 69, null, 67, null, null, null,
+  null, 71, null, 74, null, null, 76, null,
+  null, 74, null, 71, null, 69, null, null,
+  null, 67, null, 69, null, 71, null, 67,
+  null, null, 66, null, 63, null, 66, null,
+];
+const MENU_GUITAR_PATTERN = [1, 3, 2, 4, 2, 3, 1, 3];
+
+// 本地预览可放置用户已授权的首页曲目。缺失或加载失败时自动回退到上面的原创合成主题。
+const MenuTrack = {
+  src: 'local-audio/menu-theme.mp3',
+  audio: null,
+  available: false,
+  enabled: true,
+  fadeFrame: 0,
+  menuVolume: 0.48,
+
+  init() {
+    if (this.audio) return;
+    const audio = new Audio(this.src);
+    audio.id = 'menu-theme-audio';
+    audio.hidden = true;
+    audio.loop = true;
+    audio.preload = 'metadata';
+    audio.volume = 0;
+    audio.addEventListener('loadeddata', () => { this.available = true; }, { once: true });
+    audio.addEventListener('error', () => { this.available = false; });
+    document.body.appendChild(audio);
+    this.audio = audio;
+  },
+
+  unlock(enabled) {
+    this.enabled = !!enabled;
+    this.init();
+    if (this.enabled && state === 'menu') this.toMenu();
+  },
+
+  setEnabled(value) {
+    this.enabled = !!value;
+    if (!this.enabled) this.fadeTo(0, 180, true);
+    else if (state === 'menu') this.toMenu();
+  },
+
+  toMenu() {
+    if (!this.enabled) return;
+    this.init();
+    this.fadeTo(this.menuVolume, 900, false);
+  },
+
+  toGame() {
+    if (!this.audio) return;
+    this.fadeTo(0, 1900, true);
+  },
+
+  fadeTo(target, duration, pauseAtEnd) {
+    if (!this.audio) return;
+    if (this.fadeFrame) cancelAnimationFrame(this.fadeFrame);
+    const audio = this.audio;
+    const from = audio.volume;
+    const started = performance.now();
+    if (target > 0) {
+      const play = audio.play();
+      if (play && play.then) {
+        play.then(() => { this.available = true; }).catch(() => { this.available = false; });
+      }
+    }
+    const step = (now) => {
+      const p = clamp((now - started) / Math.max(1, duration), 0, 1);
+      const eased = p * p * (3 - 2 * p);
+      audio.volume = clamp(from + (target - from) * eased, 0, 1);
+      if (p < 1) this.fadeFrame = requestAnimationFrame(step);
+      else {
+        this.fadeFrame = 0;
+        if (pauseAtEnd && target === 0) audio.pause();
+      }
+    };
+    this.fadeFrame = requestAnimationFrame(step);
+  },
+};
+
 const Music = {
   ctx: null,
   master: null,
   fxMaster: null,
+  menuBus: null,
+  menuDelay: null,
+  menuFeedback: null,
+  menuWet: null,
   lastFx: {},
   timer: null,
   nextTime: 0,
   step: 0,
+  scene: '',
   enabled: loadLocal(MUSIC_KEY, '1') !== '0',
 
   unlock() {
@@ -166,11 +335,26 @@ const Music = {
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.13;
       this.master.connect(this.ctx.destination);
+      this.menuBus = this.ctx.createGain();
+      this.menuBus.gain.value = 1;
+      this.menuDelay = this.ctx.createDelay(1);
+      this.menuDelay.delayTime.value = 0.27;
+      this.menuFeedback = this.ctx.createGain();
+      this.menuFeedback.gain.value = 0.16;
+      this.menuWet = this.ctx.createGain();
+      this.menuWet.gain.value = 0.22;
+      this.menuBus.connect(this.master);
+      this.menuBus.connect(this.menuDelay);
+      this.menuDelay.connect(this.menuWet);
+      this.menuWet.connect(this.master);
+      this.menuDelay.connect(this.menuFeedback);
+      this.menuFeedback.connect(this.menuDelay);
       this.fxMaster = this.ctx.createGain();
       this.fxMaster.gain.value = 0.24;
       this.fxMaster.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
+    MenuTrack.unlock(this.enabled);
     if (this.enabled) this.start();
   },
 
@@ -189,6 +373,7 @@ const Music = {
   setEnabled(value) {
     this.enabled = !!value;
     saveLocal(MUSIC_KEY, this.enabled ? '1' : '0');
+    MenuTrack.setEnabled(this.enabled);
     if (this.enabled) { this.unlock(); this.start(); }
     else this.stop();
   },
@@ -208,6 +393,115 @@ const Music = {
     gain.connect(this.master);
     osc.start(when);
     osc.stop(when + duration + 0.03);
+  },
+
+  softNote(midi, when, duration, volume, brightness) {
+    if (!this.ctx || !this.master) return;
+    const osc = this.ctx.createOscillator();
+    const filter = this.ctx.createBiquadFilter();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
+    filter.type = 'lowpass';
+    filter.frequency.value = brightness || 1500;
+    filter.Q.value = 0.7;
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.linearRampToValueAtTime(volume, when + 0.035);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.00012, volume * 0.38), when + Math.min(0.32, duration * 0.35));
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + duration);
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.menuBus || this.master);
+    osc.start(when);
+    osc.stop(when + duration + 0.04);
+  },
+
+  pluckNote(midi, when, duration, volume) {
+    if (!this.ctx || !this.master) return;
+    const body = this.ctx.createOscillator();
+    const air = this.ctx.createOscillator();
+    const airGain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+    const gain = this.ctx.createGain();
+    const freq = 440 * Math.pow(2, (midi - 69) / 12);
+    body.type = 'triangle';
+    body.frequency.value = freq;
+    air.type = 'sine';
+    air.frequency.value = freq * 2;
+    air.detune.value = 3;
+    airGain.gain.value = 0.12;
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(2600, when);
+    filter.frequency.exponentialRampToValueAtTime(720, when + Math.min(0.42, duration * 0.7));
+    filter.Q.value = 0.85;
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.linearRampToValueAtTime(volume, when + 0.006);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.00012, volume * 0.18), when + Math.min(0.24, duration * 0.45));
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + duration);
+    body.connect(filter);
+    air.connect(airGain);
+    airGain.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.menuBus || this.master);
+    body.start(when);
+    air.start(when);
+    body.stop(when + duration + 0.03);
+    air.stop(when + duration + 0.03);
+  },
+
+  menuHit(when, kind) {
+    if (!this.ctx || !this.master) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    if (kind === 'kick') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(78, when);
+      osc.frequency.exponentialRampToValueAtTime(43, when + 0.14);
+      gain.gain.setValueAtTime(0.017, when);
+      gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.17);
+    } else {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(1180, when);
+      osc.frequency.exponentialRampToValueAtTime(720, when + 0.055);
+      gain.gain.setValueAtTime(0.0055, when);
+      gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.065);
+    }
+    osc.connect(gain);
+    gain.connect(this.master);
+    osc.start(when);
+    osc.stop(when + 0.19);
+  },
+
+  scheduleMenuStep(when, eighth) {
+    const step = this.step % 64;
+    const chord = MENU_MUSIC_CHORDS[Math.floor(step / 8) % MENU_MUSIC_CHORDS.length];
+    if (step % 8 === 0) {
+      this.pluckNote(chord[0], when, eighth * 3.4, 0.052);
+      for (let i = 1; i < chord.length; i++) {
+        this.softNote(chord[i], when + i * 0.022, eighth * 7.4, 0.0095, 900 + i * 115);
+      }
+      this.menuHit(when, 'kick');
+    }
+
+    const swing = step % 2 ? 0.038 : 0;
+    const guitarNote = chord[MENU_GUITAR_PATTERN[step % 8]];
+    this.pluckNote(guitarNote, when + swing, eighth * 1.55, step % 4 === 0 ? 0.046 : 0.036);
+    if (step % 8 === 4) this.menuHit(when + 0.02, 'rim');
+    if (step % 8 === 6) this.pluckNote(chord[0] + 12, when + 0.03, eighth * 0.82, 0.022);
+
+    const lead = MENU_MUSIC_LEAD[step];
+    if (lead != null) this.softNote(lead, when + 0.025, eighth * 2.35, 0.041, 2050);
+    if (step % 16 === 14) this.pluckNote(chord[3] + 12, when + 0.04, eighth * 0.9, 0.015);
+  },
+
+  scheduleGameStep(when, eighth) {
+    const i = this.step % GAME_MUSIC_MELODY.length;
+    if (this.step % 2 === 0) this.note(GAME_MUSIC_MELODY[i], when, eighth * 1.45, 'triangle', 0.13);
+    if (this.step % 4 === 0) {
+      const root = GAME_MUSIC_BASS[Math.floor(this.step / 4) % GAME_MUSIC_BASS.length];
+      this.note(root, when, eighth * 2.8, 'sine', 0.11);
+    }
+    if (this.step % 8 === 6) this.note(GAME_MUSIC_MELODY[i] + 12, when, eighth * 0.75, 'sine', 0.05);
   },
 
   fxTone(freq, when, duration, type, volume, endFreq) {
@@ -265,17 +559,19 @@ const Music = {
   tick() {
     if (!this.ctx || !this.enabled) return;
     const quiet = state === 'paused' || editingName || document.hidden;
-    const target = quiet ? 0.045 : (state === 'dead' ? 0.065 : 0.13);
+    const nextScene = state === 'menu' ? 'menu' : 'game';
+    if (this.scene !== nextScene) {
+      this.scene = nextScene;
+      this.step = 0;
+      this.nextTime = this.ctx.currentTime + 0.04;
+    }
+    const externalMenu = nextScene === 'menu' && MenuTrack.available;
+    const target = quiet ? 0.035 : (externalMenu ? 0.0001 : (nextScene === 'menu' ? 0.09 : (state === 'dead' ? 0.065 : 0.13)));
     this.master.gain.setTargetAtTime(target, this.ctx.currentTime, 0.12);
-    const eighth = (60 / 116) / 2;
+    const eighth = (60 / (nextScene === 'menu' ? 70 : 116)) / 2;
     while (this.nextTime < this.ctx.currentTime + 0.28) {
-      const i = this.step % MUSIC_MELODY.length;
-      if (this.step % 2 === 0) this.note(MUSIC_MELODY[i], this.nextTime, eighth * 1.45, 'triangle', 0.13);
-      if (this.step % 4 === 0) {
-        const root = MUSIC_BASS[Math.floor(this.step / 4) % MUSIC_BASS.length];
-        this.note(root, this.nextTime, eighth * 2.8, 'sine', 0.11);
-      }
-      if (this.step % 8 === 6) this.note(MUSIC_MELODY[i] + 12, this.nextTime, eighth * 0.75, 'sine', 0.05);
+      if (nextScene === 'menu' && !externalMenu) this.scheduleMenuStep(this.nextTime, eighth);
+      else this.scheduleGameStep(this.nextTime, eighth);
       this.step = (this.step + 1) % 64;
       this.nextTime += eighth;
     }
@@ -481,7 +777,7 @@ function getPaperTile(map) {
   const R = makeRng(mapSeed(map.id) ^ 0x7f4a7c15);
   for (let i = 0; i < 1200; i++) {
     const alpha = 0.025 + R() * 0.055;
-    const fiber = map.id === 'volcano' || map.id === 'inferno' ? '210,168,136' : '122,96,62';
+    const fiber = map.id === 'snow' ? '116,157,176' : (map.id === 'volcano' || map.id === 'inferno' || map.id === 'crimson' ? '210,168,136' : '122,96,62');
     g.fillStyle = 'rgba(' + fiber + ',' + alpha.toFixed(3) + ')';
     g.fillRect(R() * TILE_P, R() * TILE_P, 1 + R() * 1.5, R() < 0.82 ? 1 : 2.5);
   }
@@ -502,8 +798,13 @@ function getPaperTile(map) {
     g.strokeStyle = tint(map.doodle, 0.18 + R() * 0.1);
     g.lineWidth = 1 + R();
     g.beginPath();
-    if (map.id === 'volcano' || map.id === 'inferno') {
+    if (map.id === 'volcano' || map.id === 'inferno' || map.id === 'crimson') {
       g.moveTo(x - 5, y - 2); g.lineTo(x, y + 2); g.lineTo(x + 5, y - 4);
+    } else if (map.id === 'snow') {
+      g.moveTo(x - 5, y); g.lineTo(x + 5, y);
+      g.moveTo(x, y - 5); g.lineTo(x, y + 5);
+      g.moveTo(x - 3.5, y - 3.5); g.lineTo(x + 3.5, y + 3.5);
+      g.moveTo(x + 3.5, y - 3.5); g.lineTo(x - 3.5, y + 3.5);
     } else if (map.id === 'ocean') {
       g.arc(x, y, 4 + R() * 6, 0.2, Math.PI * 0.95);
     } else if (map.id === 'waste' || map.id === 'desert') {
@@ -514,7 +815,7 @@ function getPaperTile(map) {
     }
     g.stroke();
   }
-  if (map.id === 'volcano' || map.id === 'inferno') {
+  if (map.id === 'volcano' || map.id === 'inferno' || map.id === 'crimson') {
     for (let i = 0; i < 9; i++) {
       const x = R() * TILE_P;
       const y = R() * TILE_P;
@@ -524,7 +825,7 @@ function getPaperTile(map) {
       g.lineWidth = 4;
       g.stroke();
       polyPath(g, pts, false);
-      g.strokeStyle = map.id === 'inferno' ? 'rgba(235,71,62,0.45)' : 'rgba(240,112,43,0.5)';
+      g.strokeStyle = map.id === 'crimson' ? 'rgba(228,70,94,0.55)' : (map.id === 'inferno' ? 'rgba(235,71,62,0.45)' : 'rgba(240,112,43,0.5)');
       g.lineWidth = 1.6;
       g.stroke();
     }
@@ -609,7 +910,12 @@ window.addEventListener('keydown', (e) => {
   if (!Input.keys.has(k)) {
     Input.keys.add(k);
     if (k === 'm') Music.toggle();
-    else if (state === 'menu' || state === 'dead' || state === 'win') startGame(runMode);
+    else if (state === 'menu') {
+      if (suspendedRun) resumeSuspendedRun();
+      else startGame(runMode);
+    }
+    else if (state === 'story') continueStory();
+    else if (state === 'dead' || state === 'win') startGame(runMode);
     else if (state === 'levelup' && ['1', '2', '3'].includes(k)) chooseCard(Number(k) - 1);
     else if (k === 'p' || k === 'escape') togglePause();
   }
@@ -624,8 +930,14 @@ canvas.addEventListener('pointerdown', (e) => {
   Input.pointer.y = p.y;
   Input.pointer.down = true;
 
+  if (state === 'story') {
+    continueStory();
+    return;
+  }
+
   if (state === 'menu' || state === 'dead' || state === 'win') {
     if (state === 'menu') {
+      reactToMenuClick(p);
       if (inside(p, nameBtn)) { openNameEditor(); return; }
       if (inside(p, musicBtn)) { Music.toggle(); return; }
       for (let i = 0; i < 2; i++) {
@@ -634,7 +946,12 @@ canvas.addEventListener('pointerdown', (e) => {
       for (let i = 0; i < 3; i++) {
         if (inside(p, diffBtn(i))) { difficulty = DIFF_KEYS[i]; return; }
       }
-      if (inside(p, startBtn)) startGame(runMode);
+      if (inside(p, startBtn)) {
+        if (suspendedRun) resumeSuspendedRun();
+        else startGame(runMode);
+        return;
+      }
+      if (suspendedRun && inside(p, restartBtn)) { startGame(runMode); return; }
       return;
     }
     startGame(runMode);
@@ -667,6 +984,7 @@ canvas.addEventListener('pointermove', (e) => {
   const p = toLogical(e);
   Input.pointer.x = p.x;
   Input.pointer.y = p.y;
+  if (state === 'menu') updateMenuPointer(p);
   if (Input.pointers.get(e.pointerId) === 'move' && Input.stick) {
     Input.stick.x = p.x;
     Input.stick.y = p.y;
@@ -708,14 +1026,72 @@ const MAPS = [
   { id: 'inferno', name: '炼狱',     ground: '#2b202d', grain: '#140f19', doodle: '#c63b5b', boss: '厄喀德那',     mech: 'rain',    interval: 5,  mechDesc: '火雨' },
   { id: 'heaven',  name: '天宫',     ground: '#b7d4e3', grain: '#739eb8', doodle: '#c89d37', boss: '库克罗普斯',   mech: 'bolt',    interval: 6,  mechDesc: '天雷劈怪' },
   { id: 'four',    name: '风林火山', ground: '#4a454f', grain: '#2d2d38', doodle: '#b44352', boss: '卡俄斯',       mech: 'four',    interval: 10, mechDesc: '四象轮转' },
+  { id: 'snow',    name: '雪山',     ground: '#dce9ec', grain: '#9fbac5', doodle: '#628ea5', boss: '芬里尔',       mech: 'blizzard', interval: 7, mechDesc: '暴风雪横扫' },
+  { id: 'crimson', name: '猩红之地', ground: '#3b2029', grain: '#21151c', doodle: '#d34b5f', boss: '阿瑞斯',       mech: 'bloodmoon', interval: 6, mechDesc: '猩红月蚀落印' },
+];
+
+const BOSS_TITLES = {
+  forest: '冥门三首守卫',
+  waste: '迷宫牛首',
+  desert: '沙海谜狮',
+  swamp: '不死九首蛇',
+  ocean: '深潮六首女妖',
+  volcano: '万蛇风暴之父',
+  inferno: '怪物之母',
+  heaven: '独眼神匠',
+  four: '原初混沌',
+  snow: '神链末日巨狼',
+  crimson: '猩红战神',
+};
+
+const BOSS_OBJECTIVES = {
+  forest: '夺回母亲留下的第一枚页印',
+  waste: '沿着红线穿过无尽迷宫',
+  desert: '解开母亲藏在日轮中的谜语',
+  swamp: '从毒雾中找回守页人的药笺',
+  ocean: '取回漂流瓶里的求救信',
+  volcano: '找到母亲折断的装订针',
+  inferno: '确认母亲仍被囚禁在战书中',
+  heaven: '夺取打开混沌门的星铁钥匙',
+  four: '让十一枚纸印重新指向母亲',
+  snow: '取得能够割断神链的狼牙',
+  crimson: '击败阿瑞斯，救出母亲',
+};
+
+const STORY_PROLOGUE = {
+  chapter: '序章',
+  title: '母亲留下的第一支铅笔',
+  lines: [
+    '母亲是纸境最后的守页人。猩红战书撕开夜空时，',
+    '她为了护住你，被阿瑞斯的战使带进了破碎书页。',
+    '她只留下十一枚折纸星。你握紧铅笔，踏上寻母之路。',
+  ],
+  clue: '目标：沿着折纸星，找回母亲',
+};
+
+const CHAPTER_STORIES = [
+  { chapter: '第一章 · 森林篇', title: '荆棘门后的纸鹤', lines: ['刻耳柏洛斯倒下后，一只纸鹤从荆棘门里飞出。', '母亲写道：“别追我的脚印，追被撕走的书页。”', '纸鹤的翅根，藏着第一枚通往荒漠的页印。'], clue: '获得：第一枚页印 · 母亲的纸鹤' },
+  { chapter: '第二章 · 荒漠篇', title: '迷宫里的红线', lines: ['弥诺陶洛斯守着一团不会断裂的红线。', '那是母亲装订故事时用过的线，她故意把它留在岔路口。', '红线指向沙漠，也证明她一直在为你留下回家的路。'], clue: '获得：守页红线 · 第二枚页印' },
+  { chapter: '第三章 · 沙漠篇', title: '斯芬克斯的最后一道谜', lines: ['斯芬克斯问：“一个孩子为什么不肯回头？”', '你回答：“因为母亲还在前方等他。”日轮随之裂开。', '第三枚页印落下，背面刻着母亲熟悉的字迹。'], clue: '获得：日轮谜印 · 母亲的字迹' },
+  { chapter: '第四章 · 沼泽篇', title: '毒雾中的药笺', lines: ['海德拉的毒雾散去，水面浮起一张防水药笺。', '小时候每次受伤，母亲都照着这张方子替你包扎。', '药笺末尾写着：“别怕疼，我还活着。”'], clue: '获得：守页药笺 · 母亲仍然活着' },
+  { chapter: '第五章 · 海洋篇', title: '漂流瓶里的求救信', lines: ['斯库拉沉入深潮，一只漂流瓶被浪推到你的脚边。', '母亲说，阿瑞斯逼她修补一部会让战争永续的战书。', '她正在暗中撕掉书页，但留给你们的时间已经不多。'], clue: '真相：母亲被迫修复猩红战书' },
+  { chapter: '第六章 · 火山篇', title: '折断的装订针', lines: ['提丰的熔岩巢中，插着母亲折断的银色装订针。', '她曾用这根针刺穿战书的书脊，让阿瑞斯的力量泄漏。', '针尖仍指向炼狱——那是战书关押灵魂的夹层。'], clue: '获得：断针 · 战书出现裂口' },
+  { chapter: '第七章 · 炼狱篇', title: '书页夹层里的回声', lines: ['厄喀德那被击退后，焦黑书页里传来母亲的声音。', '“我能听见你的脚步。不要停，也不要被愤怒吞掉。”', '她把第七枚页印推过裂缝，自己却被拖向天宫。'], clue: '获得：回声页印 · 听见母亲的声音' },
+  { chapter: '第八章 · 天宫篇', title: '独眼神匠的星铁钥匙', lines: ['库克罗普斯承认，他曾为阿瑞斯锻造囚禁母亲的锁。', '击败他后，你得到一把星铁钥匙和一张混沌门图纸。', '钥匙能开门，却斩不断最后那条由命运编成的神链。'], clue: '获得：星铁钥匙 · 混沌门图纸' },
+  { chapter: '第九章 · 风林火山篇', title: '四象重新指向北方', lines: ['卡俄斯的四象崩解，九枚页印在空中拼成一张地图。', '所有路线最终都指向北方雪山，那里封印着末日巨狼。', '母亲的披肩碎片从门中落下，还残留着她的温度。'], clue: '获得：北境地图 · 母亲的披肩碎片' },
+  { chapter: '第十章 · 雪山篇', title: '芬里尔的狼牙', lines: ['芬里尔挣断冰层，却没有追击，而是咬碎自己的神链。', '你从断链中取下一颗狼牙——它能割断命运的束缚。', '雪幕后，猩红之门终于开启；母亲就在战书最深处。'], clue: '获得：破链狼牙 · 通往猩红之地' },
+  { chapter: '终章 · 猩红之地', title: '把母亲从故事里牵回来', lines: ['阿瑞斯倒下，猩红战书仍试图把母亲吞进最后一页。', '你用狼牙割断神链，再用那根红线缝合她破碎的名字。', '母亲握住你的手：“这次，我们一起把结局写完。”'], clue: '救援完成：母亲平安归来' },
 ];
 
 let state = 'menu';
 let runMode = 'story';
+let suspendedRun = null;
 let levelIdx = 0;
 let currentMap = MAPS[0];
 let levelClear = false;
 let clearT = 0;
+let bossIntroT = 0;
+let storyChapter = null;
 let hazards = [];
 let fields = [];
 let props = [];
@@ -866,6 +1242,7 @@ function setEnchantment(id, level) {
 const statLevels = { dmg: 0, rate: 0, crit: 0, speed: 0, hp: 0, magnet: 0, heal: 0 };
 
 const startBtn = { x: 0, y: 0, w: 220, h: 46 };
+const restartBtn = { x: 0, y: 0, w: 0, h: 46 };
 const nameBtn = { x: 0, y: 0, w: 160, h: 18 };
 const musicBtn = { x: 10, y: 0, w: 82, h: 16 };
 function diffBtn(i) {
@@ -886,10 +1263,18 @@ const pauseContinueBtn = { x: 0, y: 166, w: 184, h: 38 };
 const pauseHomeBtn = { x: 0, y: 218, w: 184, h: 38 };
 
 function updateLayoutRects() {
-  startBtn.x = VW / 2 - (portraitLayout ? 120 : 110);
+  const startW = suspendedRun ? (portraitLayout ? 164 : 166) : (portraitLayout ? 240 : 220);
+  const restartW = portraitLayout ? 86 : 88;
+  const startGap = 10;
+  const buttonGroupW = suspendedRun ? startW + startGap + restartW : startW;
+  startBtn.x = VW / 2 - buttonGroupW / 2;
   startBtn.y = portraitLayout ? 286 : 214;
-  startBtn.w = portraitLayout ? 240 : 220;
+  startBtn.w = startW;
   startBtn.h = portraitLayout ? 50 : 46;
+  restartBtn.x = startBtn.x + startBtn.w + startGap;
+  restartBtn.y = startBtn.y;
+  restartBtn.w = suspendedRun ? restartW : 0;
+  restartBtn.h = startBtn.h;
   nameBtn.x = VW / 2 - (portraitLayout ? 100 : 80);
   nameBtn.y = portraitLayout ? 250 : 190;
   nameBtn.w = portraitLayout ? 200 : 160;
@@ -949,6 +1334,7 @@ function startLevel() {
   shakePower = 0;
   levelClear = false;
   clearT = 0;
+  bossIntroT = 0;
 
   player.x = WORLD.w / 2;
   player.y = WORLD.h / 2;
@@ -1062,6 +1448,12 @@ function initProps() {
   } else if (currentMap.id === 'four') {
     const fourKinds = ['charTree', 'obelisk', 'crystal', 'basalt', 'rock'];
     for (let i = 0; i < 50; i++) add(fourKinds[i % fourKinds.length], 80, 760, 10, 29);
+  } else if (currentMap.id === 'snow') {
+    const snowKinds = ['cloud', 'skyPillar', 'crystal', 'rock', 'pillar'];
+    for (let i = 0; i < 52; i++) add(snowKinds[i % snowKinds.length], 80, 760, 9, 28);
+  } else if (currentMap.id === 'crimson') {
+    const crimsonKinds = ['charTree', 'obelisk', 'crystal', 'emberPile', 'rock'];
+    for (let i = 0; i < 52; i++) add(crimsonKinds[i % crimsonKinds.length], 80, 760, 10, 29);
   } else {
     for (let i = 0; i < 30; i++) add(i % 5 === 0 ? 'flower' : 'rock', 100, 700, 5, 14);
   }
@@ -1076,10 +1468,12 @@ function initProps() {
     inferno: ['charTree', 'emberPile', 'obelisk', 'crystal', 'rock'],
     heaven: ['cloud', 'skyPillar', 'shrine', 'heavenGate', 'goldLantern'],
     four: ['charTree', 'obelisk', 'crystal', 'basalt', 'rock'],
+    snow: ['cloud', 'skyPillar', 'crystal', 'rock', 'pillar'],
+    crimson: ['charTree', 'obelisk', 'crystal', 'emberPile', 'rock'],
   }[currentMap.id] || ['rock', 'flower'];
   for (let i = 0; i < 180; i++) {
     const kind = worldKinds[i % worldKinds.length];
-    const big = kind === 'canopy' || kind === 'arch' || kind === 'cloud' || kind === 'mangrove' || kind === 'shrine' || kind === 'heavenGate' || kind === 'deadTree' || kind === 'charTree';
+    const big = kind === 'canopy' || kind === 'arch' || kind === 'cloud' || kind === 'skyPillar' || kind === 'mangrove' || kind === 'shrine' || kind === 'heavenGate' || kind === 'deadTree' || kind === 'charTree';
     scatter(kind, big ? 18 : 7, big ? 36 : 20);
   }
 }
@@ -1129,6 +1523,29 @@ function spawnMechanic() {
       color: m.doodle,
       wide,
     });
+  } else if (m.mech === 'blizzard') {
+    const fromLeft = Math.random() < 0.5;
+    hazards.push({
+      kind: 'tumble',
+      x: fromLeft ? camera.x - 70 : camera.x + VW + 70,
+      y: camera.y + rnd(55, VH - 55),
+      vx: (fromLeft ? 1 : -1) * 145,
+      vy: 0,
+      r: 42,
+      t: 0,
+      life: 10,
+      hitCd: 0,
+      dmgE: 38,
+      dmgP: 13,
+      color: m.doodle,
+      wide: true,
+      snow: true,
+    });
+  } else if (m.mech === 'bloodmoon') {
+    for (let i = 0; i < 4; i++) {
+      const pt = near();
+      hazards.push({ kind: 'zone', x: pt.x, y: pt.y, r: 34, t: 0, delay: 1.05, dmgE: 42, dmgP: 11, color: m.doodle, crimson: true });
+    }
   } else if (m.mech === 'four') {
     onFourPhase();
   }
@@ -1192,6 +1609,26 @@ function completeLevel() {
   clearT = 1.8;
 }
 
+function showStoryChapter(index) {
+  storyChapter = index;
+  state = 'story';
+  Input.keys.clear();
+  Input.pointer.down = false;
+}
+
+function continueStory() {
+  const finishedChapter = storyChapter;
+  storyChapter = null;
+  Input.keys.clear();
+  Input.pointer.down = false;
+  if (finishedChapter === -1) {
+    state = 'play';
+    return;
+  }
+  state = 'play';
+  nextLevel();
+}
+
 function nextLevel() {
   levelIdx++;
   if (runMode === 'story' && levelIdx >= MAPS.length * 4) {
@@ -1203,8 +1640,24 @@ function nextLevel() {
 }
 
 function startGame(mode) {
+  MenuTrack.toGame();
   runMode = mode || 'story';
+  suspendedRun = null;
+  updateLayoutRects();
   newRun();
+  if (runMode === 'story' && !AUTO_START) showStoryChapter(-1);
+}
+
+function resumeSuspendedRun() {
+  if (!suspendedRun) return;
+  MenuTrack.toGame();
+  runMode = suspendedRun.runMode;
+  difficulty = suspendedRun.difficulty;
+  suspendedRun = null;
+  updateLayoutRects();
+  state = 'play';
+  Input.keys.clear();
+  Input.pointer.down = false;
 }
 
 function togglePause() {
@@ -1213,13 +1666,21 @@ function togglePause() {
 }
 
 function returnToMenu() {
+  suspendedRun = {
+    runMode,
+    difficulty,
+    level: levelIdx + 1,
+    mapName: currentMap.name,
+    seconds: Math.floor(time),
+  };
+  rerollMenuSeason();
   state = 'menu';
+  MenuTrack.toMenu();
+  updateLayoutRects();
   Input.keys.clear();
   Input.stick = null;
   Input.pointers.clear();
   Input.pointer.down = false;
-  cards = [];
-  levelClear = false;
 }
 
 // ---------------- 敌人 ----------------
@@ -1244,6 +1705,8 @@ function enemyThemePalette() {
   if (id === 'volcano') return { body: '#55484b', dark: '#29252b', hi: '#80656a', accent: '#f17934' };
   if (id === 'inferno') return { body: '#44333d', dark: '#211d24', hi: '#744554', accent: '#ed4d42' };
   if (id === 'heaven') return { body: '#9bb9ce', dark: '#536c82', hi: '#eef5f5', accent: '#d7aa3e' };
+  if (id === 'snow') return { body: '#789cad', dark: '#405c6b', hi: '#d8f0f4', accent: '#79c8df' };
+  if (id === 'crimson') return { body: '#6d2839', dark: '#2a141c', hi: '#a9485d', accent: '#ed5969' };
   const phaseColors = [
     { body: '#514554', dark: '#28232d', hi: '#93aa69', accent: '#8db05a' },
     { body: '#514554', dark: '#28232d', hi: '#d6b165', accent: '#d9ad43' },
@@ -1251,6 +1714,94 @@ function enemyThemePalette() {
     { body: '#514554', dark: '#28232d', hi: '#9aabc0', accent: '#82a5c4' },
   ];
   return phaseColors[fourPhase] || phaseColors[0];
+}
+
+// 每张地图的精英身份与主动技能。视觉沿用当前怪物家族，行为不再只是统一三向齐射。
+const ELITE_MYTHS = {
+  forest:  { name: '三首犬卫', skill: '三首噬弹', cd: 1.55, far: 220, near: 140 },
+  waste:   { name: '迷宫牛卫', skill: '牛角重矛', cd: 2.15, far: 235, near: 150 },
+  desert:  { name: '谜狮祭司', skill: '谜阵十字', cd: 2.0,  far: 225, near: 145 },
+  swamp:   { name: '九首毒卫', skill: '五首毒雨', cd: 2.25, far: 220, near: 140 },
+  ocean:   { name: '斯库拉侍从', skill: '触腕环射', cd: 2.35, far: 215, near: 135 },
+  volcano: { name: '提丰火裔', skill: '双蛇熔痕', cd: 2.25, far: 225, near: 145 },
+  inferno: { name: '蛇母眷属', skill: '孵化援军', cd: 3.6,  far: 210, near: 135 },
+  heaven:  { name: '独眼锻匠', skill: '独眼天雷', cd: 2.8,  far: 235, near: 155 },
+  four:    { name: '混沌四象', skill: '四色轮转', cd: 2.45, far: 220, near: 140 },
+  snow:    { name: '神链狼卫', skill: '寒风狼嚎', cd: 3.0,  far: 225, near: 145 },
+  crimson: { name: '恐惧战使', skill: '血月军阵', cd: 2.7,  far: 230, near: 150 },
+};
+
+function eliteMyth(id) {
+  return ELITE_MYTHS[id] || ELITE_MYTHS.forest;
+}
+
+function eliteShot(e, a, speed, r, dmg, color) {
+  ebullets.push({
+    x: e.x + Math.cos(a) * e.r,
+    y: e.y + Math.sin(a) * e.r,
+    vx: Math.cos(a) * speed,
+    vy: Math.sin(a) * speed,
+    r,
+    dmg: dmg * diff().dmg,
+    life: 4.5,
+    color: color || e.accent,
+    weaponId: 'enemyElite',
+    themeId: e.themeId || currentMap.id,
+  });
+}
+
+function castEliteSkill(e, aim, melee) {
+  const id = e.themeId || currentMap.id;
+  const skill = eliteMyth(id);
+  e.attackFx = 0.42;
+  e.attackA = aim;
+  addText(e.x, e.y - e.r - 18, skill.skill, e.accent, 9);
+
+  if (id === 'forest') {
+    // 刻耳柏洛斯的三颗头分别吐出一枚噬弹。
+    for (let i = -1; i <= 1; i++) eliteShot(e, aim + i * 0.24, melee ? 155 : 190, 5, 9);
+  } else if (id === 'waste') {
+    // 弥诺陶洛斯系精英：远程投出一枚重矛，近战则沿迷宫直线冲撞。
+    if (melee) e.dashT = 1.05;
+    else eliteShot(e, aim, 245, 8, 16, '#c58b52');
+  } else if (id === 'desert') {
+    // 斯芬克斯谜阵：四枚弹体组成旋转十字。
+    for (let i = 0; i < 4; i++) eliteShot(e, aim + i * Math.PI / 2, 150, 4.5, 8, i % 2 ? '#e7b666' : e.accent);
+  } else if (id === 'swamp') {
+    // 海德拉多首齐吐，并恢复少量生命。
+    for (let i = -2; i <= 2; i++) eliteShot(e, aim + i * 0.2, 155, 4.2, 7, i % 2 ? '#91aa63' : e.accent);
+    e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.045);
+  } else if (id === 'ocean') {
+    // 斯库拉触腕向八个方向横扫。
+    for (let i = 0; i < 8; i++) eliteShot(e, i * TAU / 8 + e.t * 0.35, 125, 4.2, 7, i % 2 ? '#8bc6c9' : e.accent);
+  } else if (id === 'volcano') {
+    // 提丰双蛇留下两道交叉熔痕。
+    eliteShot(e, aim - 0.32, 205, 6, 11, '#f17934');
+    eliteShot(e, aim + 0.32, 205, 6, 11, '#ffc34a');
+    hazards.push({ kind: 'zone', x: player.x, y: player.y, r: 28, t: 0, delay: 1.0, dmgE: 28, dmgP: 9, color: '#e26432' });
+  } else if (id === 'inferno') {
+    // 厄喀德那作为怪物之母，孵化两只眷属而不是重复射击。
+    spawnEnemy('slime');
+    spawnEnemy('bat');
+    eliteShot(e, aim, 135, 7, 10, '#c63b5b');
+  } else if (id === 'heaven') {
+    // 独眼锻匠锁定玩家落下一道天雷。
+    hazards.push({ kind: 'bolt', x: player.x, y: player.y, r: 27, t: 0, delay: 0.62, dmgE: 70, dmgP: 12, color: '#c89d37' });
+  } else if (id === 'four') {
+    // 卡俄斯眷属轮流释放风林火山四象弹。
+    const cols = ['#789447', '#d5a13a', '#d75a45', '#7189a6'];
+    for (let i = 0; i < 4; i++) eliteShot(e, aim + i * Math.PI / 2, 165 + i * 8, 5, 9, cols[i]);
+  } else if (id === 'snow') {
+    // 芬里尔狼嚎卷起横向暴风雪。
+    const fromLeft = e.x < player.x;
+    hazards.push({ kind: 'tumble', x: fromLeft ? camera.x - 60 : camera.x + VW + 60, y: player.y, vx: (fromLeft ? 1 : -1) * 155, vy: 0, r: 38, t: 0, life: 9, hitCd: 0, dmgE: 28, dmgP: 11, color: '#79c8df', wide: true, snow: true });
+  } else if (id === 'crimson') {
+    // 阿瑞斯的战使借福波斯与得摩斯之名布下恐惧血印。
+    for (let i = 0; i < 3; i++) {
+      const a = i * TAU / 3 + e.t * 0.2;
+      hazards.push({ kind: 'zone', x: clamp(player.x + Math.cos(a) * 46, 40, WORLD.w - 40), y: clamp(player.y + Math.sin(a) * 46, 40, WORLD.h - 40), r: 27, t: 0, delay: 0.95, dmgE: 34, dmgP: 10, color: '#d34b5f', crimson: true });
+    }
+  }
 }
 
 function enemyVisual(type, elite, boss) {
@@ -1282,6 +1833,7 @@ function spawnEnemy(type) {
   const p = spawnPos();
   const elite = type === 'elite' || type === 'eliteShooter';
   const rangedElite = type === 'eliteShooter';
+  const myth = eliteMyth(currentMap.id);
   const visual = enemyVisual(type, elite, false);
   enemies.push({
     type,
@@ -1298,6 +1850,11 @@ function spawnEnemy(type) {
     accent: visual.accent,
     elite: !!elite,
     rangedElite,
+    themeId: currentMap.id,
+    eliteName: elite ? myth.name : '',
+    eliteSkill: elite ? myth.skill : '',
+    mythCd: elite ? (rangedElite ? myth.cd : 4.2 + rnd(0, 1.4)) : 0,
+    dashT: 0,
     boss: false,
     flash: 0,
     slowT: 0,
@@ -1323,8 +1880,9 @@ function spawnBoss() {
     atkCd: 2.0, atkIdx: 0,
     tele: 0, chargeT: 0, chargeA: 0,
   });
+  bossIntroT = FORCE_BOSS_INTRO_PREVIEW ? 3.0 : 3.6;
   Music.effect('boss');
-  addText(player.x, player.y - 40, 'BOSS 来了！', COL.red, 16);
+  addText(player.x, player.y - 40, currentMap.boss + ' 降临！', COL.red, 16);
 }
 
 function spawnWave() {
@@ -1642,13 +2200,18 @@ function update(dt) {
 
   time += dt;
   flashT = Math.max(0, flashT - dt);
+  if (!FORCE_BOSS_INTRO_PREVIEW) bossIntroT = Math.max(0, bossIntroT - dt);
   shakeT = Math.max(0, shakeT - dt);
   if (shakeT <= 0) shakePower = 0;
   if (player.inv > 0) player.inv -= dt;
 
   if (levelClear) {
     clearT -= dt;
-    if (clearT <= 0) { levelClear = false; nextLevel(); }
+    if (clearT <= 0) {
+      levelClear = false;
+      if (runMode === 'story' && (levelIdx + 1) % 4 === 0) showStoryChapter(Math.floor(levelIdx / 4));
+      else nextLevel();
+    }
     return;
   }
 
@@ -1810,13 +2373,14 @@ function update(dt) {
     if (enemies.length < 120) spawnWave();
   }
 
-  // 精英：近战与远程交替登场
+  // 精英：近战与远程交替登场，但身份和主动技能随地图变化。
   const eliteTimes = [40, 80];
   if (eliteIdx < eliteTimes.length && time >= eliteTimes[eliteIdx]) {
     const eliteType = eliteIdx % 2 === 0 ? 'eliteShooter' : 'elite';
+    const myth = eliteMyth(currentMap.id);
     eliteIdx++;
     spawnEnemy(eliteType);
-    addText(player.x, player.y - 34, eliteType === 'eliteShooter' ? '远程精英出现！' : '近战精英出现！', COL.red, 13);
+    addText(player.x, player.y - 34, myth.name + ' · ' + myth.skill, COL.red, 13);
   }
 
   // 关卡推进：Boss 关刷 Boss，普通关直接过关
@@ -1832,6 +2396,7 @@ function update(dt) {
     e.t += dt;
     e.flash = Math.max(0, e.flash - dt * 6);
     e.attackFx = Math.max(0, (e.attackFx || 0) - dt);
+    e.dashT = Math.max(0, (e.dashT || 0) - dt);
     e.hitFxCd = Math.max(0, (e.hitFxCd || 0) - dt);
     if (e.slowT > 0) e.slowT = Math.max(0, e.slowT - dt);
     if (e.poisonT > 0) {
@@ -1862,6 +2427,14 @@ function update(dt) {
       const d = Math.hypot(vx, vy) || 1;
       vx /= d;
       vy /= d;
+      const aim = Math.atan2(vy, vx);
+      if (e.elite && !e.rangedElite) {
+        e.mythCd = (e.mythCd || 0) - dt;
+        if (e.mythCd <= 0 && d < 300) {
+          castEliteSkill(e, aim, true);
+          e.mythCd = 4.4 + rnd(0, 1.2);
+        }
+      }
       if (e.type === 'bat') {
         const s = Math.sin(e.t * 5 + e.phase) * 0.7;
         const nx = vx - vy * s;
@@ -1869,27 +2442,26 @@ function update(dt) {
         vx = nx; vy = ny;
       } else if (e.type === 'shooter' || e.type === 'eliteShooter') {
         const rangedElite = e.type === 'eliteShooter';
-        const far = rangedElite ? 230 : 140;
-        const near = rangedElite ? 145 : 90;
+        const myth = eliteMyth(e.themeId || currentMap.id);
+        const far = rangedElite ? myth.far : 140;
+        const near = rangedElite ? myth.near : 90;
         if (d > far) { /* 靠近 */ }
         else if (d < near) { vx = -vx; vy = -vy; }
         else { const oldVx = vx; vx = -vy * 0.72; vy = oldVx * 0.72; }
         if (e.fireCd <= 0 && d < 280) {
-          e.fireCd = rangedElite ? 1.45 : 1.7;
+          e.fireCd = rangedElite ? myth.cd : 1.7;
           e.attackFx = rangedElite ? 0.34 : 0.22;
           const bx = player.x - e.x, by = player.y - e.y;
           const bd = Math.hypot(bx, by) || 1;
           const aim = Math.atan2(by, bx);
           e.attackA = aim;
-          const count = rangedElite ? 3 : 1;
-          for (let shot = 0; shot < count; shot++) {
-            const a = aim + (shot - (count - 1) / 2) * (rangedElite ? 0.22 : 0);
-            const speed = rangedElite ? 185 : 150;
+          if (rangedElite) castEliteSkill(e, aim, false);
+          else {
             ebullets.push({
-              x: e.x + Math.cos(a) * e.r, y: e.y + Math.sin(a) * e.r,
-              vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
-              r: rangedElite ? 5 : 4, dmg: (rangedElite ? 10 : 6) * diff().dmg, life: 4,
-              color: rangedElite ? e.accent : '#c75a9a', weaponId: rangedElite ? 'enemyElite' : 'enemyInk', themeId: currentMap.id,
+              x: e.x + Math.cos(aim) * e.r, y: e.y + Math.sin(aim) * e.r,
+              vx: Math.cos(aim) * 150, vy: Math.sin(aim) * 150,
+              r: 4, dmg: 6 * diff().dmg, life: 4,
+              color: '#c75a9a', weaponId: 'enemyInk', themeId: currentMap.id,
             });
           }
         }
@@ -1903,7 +2475,7 @@ function update(dt) {
         if (Math.hypot(e.x - f.x, e.y - f.y) < f.r + e.r * 0.5) { fieldSlow = Math.min(fieldSlow, f.slow); break; }
       }
       const mountainSlow = (currentMap.mech === 'four' && fourPhase === 3) ? 0.75 : 1;
-      const spd = e.speed * (e.slowT > 0 ? e.slowMul : 1) * fieldSlow * mountainSlow;
+      const spd = e.speed * (e.slowT > 0 ? e.slowMul : 1) * fieldSlow * mountainSlow * (e.dashT > 0 ? 2.35 : 1);
       e.x += vx * spd * dt;
       e.y += vy * spd * dt;
     }
@@ -2136,6 +2708,8 @@ const BOSS_ATTACKS = {
   inferno: ['summon', 'ring'],
   heaven:  ['bolt', 'charge'],
   four:    ['ring', 'charge', 'rain', 'summon'],
+  snow:    ['gale', 'charge', 'ring'],
+  crimson: ['warcry', 'rain', 'charge', 'spiral'],
 };
 
 const BOSS_ATTACK_LABELS = {
@@ -2146,6 +2720,8 @@ const BOSS_ATTACK_LABELS = {
   rain: '落火预警',
   bolt: '天雷锁定',
   charge: '蓄力冲撞',
+  gale: '末日狼嚎',
+  warcry: '战神军阵',
 };
 
 function bossAttackList() {
@@ -2195,6 +2771,18 @@ function doBossAttack(e, atk, dx, dy) {
     });
   } else if (atk === 'charge') {
     e.tele = 0.6;
+  } else if (atk === 'gale') {
+    const fromLeft = e.x < player.x;
+    hazards.push({ kind: 'tumble', x: fromLeft ? camera.x - 70 : camera.x + VW + 70, y: player.y, vx: (fromLeft ? 1 : -1) * 175, vy: 0, r: 48, t: 0, life: 10, hitCd: 0, dmgE: 40, dmgP: 15, color: '#79c8df', wide: true, snow: true });
+  } else if (atk === 'warcry') {
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * TAU + e.t * 0.25;
+      bossBullet(e, a, i % 2 ? 145 : 115, i % 2 ? 4.2 : 5.5, i % 2 ? 9 : 12, 5);
+    }
+    for (let i = 0; i < 2; i++) {
+      const a = base + (i ? 0.34 : -0.34);
+      bossBullet(e, a, 220, 6, 14, 4);
+    }
   }
 }
 
@@ -2417,6 +3005,8 @@ function terrainColors() {
   if (id === 'volcano') return { top: '#51464a', side: '#2e292d', accent: '#f27835', kind: 'lava' };
   if (id === 'inferno') return { top: '#322534', side: '#160f1c', accent: '#b92f58', kind: 'abyss' };
   if (id === 'heaven') return { top: '#f6f0dc', side: '#88a4bf', accent: '#d2a63b', kind: 'cloud' };
+  if (id === 'snow') return { top: '#d8e8ed', side: '#89a8b7', accent: '#f5fbff', kind: 'ice' };
+  if (id === 'crimson') return { top: '#542634', side: '#24131b', accent: '#d74a60', kind: 'blood' };
   const phase = ['#95ad62', '#d7ae59', '#c65a45', '#7f91a2'][fourPhase] || '#b49a65';
   return { top: shade(phase, -0.24), side: shade(phase, -0.56), accent: shade(phase, 0.12), kind: 'bank' };
 }
@@ -2657,7 +3247,7 @@ function drawProp(p, t) {
       roughCircle(ctx, 0, -p.r * 0.4, p.r * 0.3, null, '#9a6338', 1, 9);
       roughLine(ctx, -p.r * 0.36, -p.r * 0.48, p.r * 0.08, -p.r * 0.58, '#f2c98d', 1.2);
     } else if (p.kind === 'rock') {
-      const rock = currentMap.id === 'volcano' || currentMap.id === 'inferno' ? '#54474a' : '#9a8f82';
+      const rock = currentMap.id === 'snow' ? '#8ca5b8' : (currentMap.id === 'crimson' ? '#4b2530' : (currentMap.id === 'volcano' || currentMap.id === 'inferno' ? '#54474a' : '#9a8f82'));
       const outline = [[-p.r, p.r * 0.52], [-p.r * 0.72, -p.r * 0.35], [-p.r * 0.12, -p.r], [p.r * 0.68, -p.r * 0.42], [p.r, p.r * 0.52]];
       fillPoly(ctx, outline, rock);
       strokePoly(ctx, outline, COL.ink, 1.3);
@@ -2897,8 +3487,8 @@ function drawProp(p, t) {
     } else if (p.kind === 'crystal') {
       const crystalColor = currentMap.id === 'inferno'
         ? '#b83268'
-        : (currentMap.id === 'heaven' ? '#79aee0' : (currentMap.id === 'four' ? ['#7fa050', '#d8a33b', '#d75a45', '#7896c8'][fourPhase] : '#e9653f'));
-      const crystalSeam = currentMap.id === 'inferno' ? '#f07aa0' : '#ffc34a';
+        : (currentMap.id === 'snow' ? '#8fd3e8' : (currentMap.id === 'crimson' ? '#d84b66' : (currentMap.id === 'heaven' ? '#79aee0' : (currentMap.id === 'four' ? ['#7fa050', '#d8a33b', '#d75a45', '#7896c8'][fourPhase] : '#e9653f'))));
+      const crystalSeam = currentMap.id === 'snow' ? '#eefbff' : (currentMap.id === 'crimson' ? '#ff8798' : (currentMap.id === 'inferno' ? '#f07aa0' : '#ffc34a'));
       const crystalShape = [[-p.r * 0.55, p.r], [-p.r * 0.38, -p.r * 0.3], [0, -p.r], [p.r * 0.35, -p.r * 0.15], [p.r * 0.65, p.r]];
       fillPoly(ctx, crystalShape, crystalColor);
       fillPoly(ctx, [[0, -p.r], [p.r * 0.35, -p.r * 0.15], [p.r * 0.65, p.r], [0, p.r * 0.72]], shade(crystalColor, -0.24));
@@ -2906,8 +3496,8 @@ function drawProp(p, t) {
       strokePoly(ctx, crystalShape, COL.ink, 1.4);
       roughLine(ctx, 0, -p.r * 0.75, 0, p.r * 0.72, crystalSeam, 1.2);
     } else if (p.kind === 'pillar') {
-      const pillarColor = currentMap.id === 'heaven' ? '#c9d9e7' : '#4f4142';
-      const seamColor = currentMap.id === 'heaven' ? '#7fa1c5' : '#e75c36';
+      const pillarColor = currentMap.id === 'snow' ? '#bed2dc' : (currentMap.id === 'crimson' ? '#512834' : (currentMap.id === 'heaven' ? '#c9d9e7' : '#4f4142'));
+      const seamColor = currentMap.id === 'snow' ? '#f2fbff' : (currentMap.id === 'crimson' ? '#d94b63' : (currentMap.id === 'heaven' ? '#7fa1c5' : '#e75c36'));
       fillPoly(ctx, [[-p.r * 0.6, -p.r * 0.72], [0, -p.r], [p.r * 0.6, -p.r * 0.72], [p.r * 0.6, p.r * 0.78], [0, p.r], [-p.r * 0.6, p.r * 0.78]], shade(pillarColor, -0.12));
       fillPoly(ctx, [[-p.r * 0.6, -p.r * 0.72], [0, -p.r], [0, p.r], [-p.r * 0.6, p.r * 0.78]], shade(pillarColor, 0.12));
       fillPoly(ctx, [[0, -p.r], [p.r * 0.6, -p.r * 0.72], [p.r * 0.6, p.r * 0.78], [0, p.r]], shade(pillarColor, -0.25));
@@ -3032,6 +3622,39 @@ function drawAmbientScene() {
       roughEllipse(ctx, x, y, 22 + (i % 2) * 10, 5 + (i % 3), '#ffffff', null, 0, 10);
       ctx.restore();
     }
+  } else if (id === 'snow') {
+    for (let i = 0; i < 34; i++) {
+      const phase = i * 39.7;
+      const x = wx(((phase * 17 + t * (18 + i % 5)) % (VW + 70)) - 35);
+      const y = wy(((phase * 7 + t * (11 + i % 4)) % (VH + 50)) - 25);
+      const r = 1.1 + (i % 3) * 0.7;
+      ctx.save(); ctx.globalAlpha = 0.22 + (i % 4) * 0.035;
+      roughLine(ctx, x - r * 2, y, x + r * 2, y, '#f7fcff', 0.8);
+      roughLine(ctx, x, y - r * 2, x, y + r * 2, '#f7fcff', 0.8);
+      ctx.restore();
+    }
+    for (let i = 0; i < 5; i++) {
+      const x = wx(((t * 34 + i * 157) % (VW + 180)) - 120);
+      const y = wy(52 + i * 58 + Math.sin(t + i) * 6);
+      ctx.save(); ctx.globalAlpha = 0.14;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.bezierCurveTo(x + 35, y - 10, x + 72, y + 8, x + 112, y - 4);
+      ctx.strokeStyle = '#e9f7fb'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore();
+    }
+  } else if (id === 'crimson') {
+    for (let i = 0; i < 22; i++) {
+      const phase = i * 29.3;
+      const x = wx((phase * 23 + Math.sin(t * 0.5 + phase) * 18) % VW);
+      const y = wy(VH - ((t * (7 + i % 4) + phase * 4) % (VH + 24)));
+      ctx.save(); ctx.translate(x, y); ctx.rotate(t * 0.25 + phase); ctx.globalAlpha = 0.13 + (i % 3) * 0.03;
+      fillPoly(ctx, [[0, -3], [2, 0], [0, 3], [-2, 0]], i % 3 ? '#b83b55' : '#e45a6d');
+      ctx.restore();
+    }
+    for (let i = 0; i < 4; i++) {
+      const x = wx(45 + i * 170 + Math.sin(t * 0.2 + i) * 25);
+      const y = wy(66 + (i % 2) * 112);
+      ctx.save(); ctx.globalAlpha = 0.06;
+      roughEllipse(ctx, x, y, 72, 15, '#8a2841', null, 0, 12); ctx.restore();
+    }
   } else if (id === 'four') {
     let omenReveal = 0;
     for (let i = 0; i < 3; i++) {
@@ -3154,6 +3777,20 @@ function drawHazards() {
         fillPoly(ctx, flame, tint('#d43e3f', 0.08 + k * 0.16));
         strokePoly(ctx, flame, tint('#ed5b37', 0.5 + k * 0.4), 1.8);
         roughLine(ctx, h.x, h.y - s * 0.45, h.x - s * 0.12, h.y + s * 0.5, '#ffc34a', 1.2);
+      } else if (currentMap.id === 'crimson') {
+        const ring = [];
+        for (let i = 0; i < 16; i++) {
+          const a = i * TAU / 16;
+          const rr = h.r * (i % 2 ? 0.72 + k * 0.12 : 0.96 + k * 0.08);
+          ring.push([h.x + Math.cos(a) * rr, h.y + Math.sin(a) * rr]);
+        }
+        fillPoly(ctx, ring, tint('#841f39', 0.1 + k * 0.14));
+        strokePoly(ctx, ring, tint('#e25268', 0.5 + k * 0.42), 1.9);
+        roughCircle(ctx, h.x, h.y, h.r * (0.28 + k * 0.16), null, '#f06a7f', 1.3, 11);
+        for (let i = 0; i < 5; i++) {
+          const a = i * TAU / 5 + 0.35;
+          roughLine(ctx, h.x + Math.cos(a) * h.r * 0.3, h.y + Math.sin(a) * h.r * 0.3, h.x + Math.cos(a) * h.r * 0.82, h.y + Math.sin(a) * h.r * 0.82, '#b92f4e', 1.1);
+        }
       } else if (currentMap.id === 'four') {
         const branches = [
           [[h.x - h.r, h.y], [h.x - h.r * 0.35, h.y - 4], [h.x, h.y + 2], [h.x + h.r, h.y - 5]],
@@ -3182,7 +3819,18 @@ function drawHazards() {
       strokePoly(ctx, diamond, tint(h.color, 0.55 + k * 0.35), 1.4);
       ctx.restore();
     } else if (h.kind === 'tumble') {
-      if (h.wide) {
+      if (h.wide && h.snow) {
+        ctx.save(); ctx.translate(h.x, h.y); ctx.globalAlpha = 0.68;
+        const dir = Math.sign(h.vx) || 1;
+        fillPoly(ctx, [[-h.r * 1.2 * dir, -48], [h.r * 0.55 * dir, -36], [h.r * 1.25 * dir, -8], [h.r * 0.55 * dir, 24], [-h.r * 1.2 * dir, 38]], 'rgba(218,238,245,0.48)');
+        for (let i = -2; i <= 2; i++) {
+          const yy = i * 18;
+          ctx.beginPath(); ctx.moveTo(-h.r * dir, yy); ctx.bezierCurveTo(-h.r * 0.3 * dir, yy - 10, h.r * 0.35 * dir, yy + 8, h.r * dir, yy - 4);
+          ctx.strokeStyle = i % 2 ? '#f8fdff' : '#9dc8d7'; ctx.lineWidth = 1.8; ctx.stroke();
+          roughCircle(ctx, (i * 9 + 4) * dir, yy - 4, 1.8, '#ffffff', '#9dc8d7', 0.5, 6);
+        }
+        ctx.restore();
+      } else if (h.wide) {
         ctx.save(); ctx.translate(h.x, h.y); ctx.globalAlpha = 0.58;
         const dir = Math.sign(h.vx) || 1;
         fillPoly(ctx, [[-h.r * dir, -46], [h.r * 0.25 * dir, -34], [h.r * dir, -20], [h.r * 0.2 * dir, -4], [-h.r * dir, 8]], tint('#4e9fb4', 0.3));
@@ -3364,6 +4012,17 @@ function drawEnemyThemeDetails(e, x, y) {
     fillPoly(ctx, [[x - r * 0.65, yy + r * 0.1], [x - r * 1.22, yy - r * 0.2], [x - r * 1.06, yy + r * 0.48]], '#eef5f5');
     fillPoly(ctx, [[x + r * 0.65, yy + r * 0.1], [x + r * 1.22, yy - r * 0.2], [x + r * 1.06, yy + r * 0.48]], '#d7e5ee');
     doodleStar(ctx, x, yy + r * 0.4, Math.max(1.6, r * 0.16), accent, 0.8);
+  } else if (id === 'snow') {
+    fillPoly(ctx, [[x - r * 0.62, yy - r * 0.54], [x - r * 0.2, yy - r * 1.35], [x, yy - r * 0.72]], '#d9f0f5');
+    fillPoly(ctx, [[x + r * 0.62, yy - r * 0.54], [x + r * 0.2, yy - r * 1.35], [x, yy - r * 0.72]], '#9fd2df');
+    roughBox(ctx, x - r * 0.72, yy + r * 0.34, r * 1.44, Math.max(3, r * 0.28), accent, COL.ink, 0.7);
+    fillPoly(ctx, [[x + r * 0.38, yy + r * 0.5], [x + r * 0.88, yy + r * 0.92], [x + r * 0.6, yy + r * 0.3]], shade(accent, -0.08));
+  } else if (id === 'crimson') {
+    fillPoly(ctx, [[x - r * 0.58, yy - r * 0.62], [x - r * 1.02, yy - r * 1.28], [x - r * 0.18, yy - r * 0.88]], e.dark);
+    fillPoly(ctx, [[x + r * 0.58, yy - r * 0.62], [x + r * 1.02, yy - r * 1.28], [x + r * 0.18, yy - r * 0.88]], e.dark);
+    roughLine(ctx, x, yy - r * 0.62, x, yy + r * 0.62, accent, Math.max(1.3, r * 0.12));
+    roughCircle(ctx, x, yy + r * 0.12, Math.max(1.8, r * 0.18), null, '#f17888', 1, 8);
+    roughBox(ctx, x - r * 0.72, yy + r * 0.44, r * 1.44, Math.max(3, r * 0.25), '#7d273c', COL.ink, 0.7);
   } else if (id === 'four') {
     const cols = ['#789447', '#d5a13a', '#d75a45', '#7189a6'];
     for (let i = 0; i < 4; i++) {
@@ -3390,7 +4049,7 @@ function drawMythHead(x, y, r, fill, kind) {
 
 function drawMythMinion(e, x, y) {
   const id = currentMap.id;
-  if (!['forest', 'waste', 'desert', 'swamp', 'ocean', 'volcano', 'inferno', 'heaven', 'four'].includes(id)) return false;
+  if (!['forest', 'waste', 'desert', 'swamp', 'ocean', 'volcano', 'inferno', 'heaven', 'four', 'snow', 'crimson'].includes(id)) return false;
   const r = e.r;
   const ranged = e.type === 'shooter' || e.type === 'eliteShooter';
   const elite = e.elite;
@@ -3459,6 +4118,19 @@ function drawMythMinion(e, x, y) {
     fillPoly(ctx, [[x - r * 0.82, y - r * 0.2], [x - r * 1.3, y + r * 0.3], [x - r * 0.72, y + r * 0.55]], COL.gold);
     fillPoly(ctx, [[x + r * 0.82, y - r * 0.2], [x + r * 1.3, y + r * 0.3], [x + r * 0.72, y + r * 0.55]], COL.gold);
     if (ranged) roughLine(ctx, x + r * 0.8, y, x + r * 1.45, y - r * 0.65, COL.gold, 3);
+  } else if (id === 'snow') {
+    roughEllipse(ctx, x, y + r * 0.22, r * 1.08, r * 0.74, fill, COL.ink, 1.8, 10);
+    drawMythHead(x, y - r * 0.55, r * (elite ? 0.58 : 0.5), fill, 'hound');
+    for (let i = -1; i <= 1; i++) fillPoly(ctx, [[x + i * r * 0.52 - r * 0.18, y - r * 0.72], [x + i * r * 0.52, y - r * 1.36], [x + i * r * 0.52 + r * 0.18, y - r * 0.72]], i % 2 ? '#eefbff' : accent);
+    roughBox(ctx, x - r * 0.82, y + r * 0.35, r * 1.64, Math.max(4, r * 0.25), '#7dc4d8', COL.ink, 0.8);
+    if (ranged) roughLine(ctx, x + r * 0.7, y - r * 0.15, x + r * 1.42, y - r * 0.62, '#dff8ff', 3);
+  } else if (id === 'crimson') {
+    roughEllipse(ctx, x, y - r * 0.1, r * 0.82, r, fill, COL.ink, 1.8, 10);
+    drawMythHead(x, y - r * 0.65, r * 0.45, fill, 'hound');
+    fillPoly(ctx, [[x - r * 0.5, y - r * 0.5], [x - r * 1.15, y - r * 1.35], [x - r * 0.72, y + r * 0.02]], e.dark);
+    fillPoly(ctx, [[x + r * 0.5, y - r * 0.5], [x + r * 1.15, y - r * 1.35], [x + r * 0.72, y + r * 0.02]], e.dark);
+    roughCircle(ctx, x, y + r * 0.16, r * 0.18, null, '#f26d80', 1.1, 8);
+    if (ranged) roughLine(ctx, x + r * 0.7, y, x + r * 1.42, y - r * 0.58, accent, 3.2);
   } else {
     const cols = ['#789447', '#d5a13a', '#d75a45', '#7189a6'];
     ctx.save(); ctx.translate(x, y); ctx.rotate(e.t * 0.45);
@@ -3518,6 +4190,25 @@ function drawMythBoss(e, x, y) {
     fillPoly(ctx, [[x + r * 0.85, y - r * 0.4], [x + r * 1.4, y + r * 0.1], [x + r * 0.85, y + r * 0.65]], COL.gold);
     roughLine(ctx, x + r * 0.8, y + r * 0.2, x + r * 1.65, y + r * 1.25, '#957143', 10);
     roughBox(ctx, x + r * 1.35, y + r * 0.75, r * 0.8, r * 0.55, accent, COL.ink, 1.5);
+  } else if (id === 'snow') {
+    roughEllipse(ctx, x, y + r * 0.25, r * 1.2, r * 0.78, teleFill, COL.ink, 2.5, 12);
+    drawMythHead(x, y - r * 0.68, r * 0.58, fill, 'hound');
+    for (let i = -2; i <= 2; i++) fillPoly(ctx, [[x + i * r * 0.42 - 6, y - r * 0.52], [x + i * r * 0.42, y - r * (1.18 + Math.abs(i) * 0.08)], [x + i * r * 0.42 + 6, y - r * 0.52]], i % 2 ? '#eefbff' : accent);
+    roughBox(ctx, x - r * 0.9, y + r * 0.38, r * 1.8, Math.max(7, r * 0.24), '#75b9ce', COL.ink, 1.1);
+    roughLine(ctx, x + r * 0.88, y + r * 0.3, x + r * 1.55, y - r * 0.16, '#dff8ff', 9);
+  } else if (id === 'crimson') {
+    // 阿瑞斯：重甲、带鬃冠的战盔与长矛，和雪山巨狼形成完全不同的轮廓。
+    roughEllipse(ctx, x, y + r * 0.18, r * 0.82, r * 1.05, teleFill, COL.ink, 2.7, 12);
+    fillPoly(ctx, [[x - r * 0.72, y - r * 0.35], [x, y - r * 0.72], [x + r * 0.72, y - r * 0.35], [x + r * 0.52, y + r * 0.7], [x, y + r], [x - r * 0.52, y + r * 0.7]], '#772b3e');
+    strokePoly(ctx, [[x - r * 0.72, y - r * 0.35], [x, y - r * 0.72], [x + r * 0.72, y - r * 0.35], [x + r * 0.52, y + r * 0.7], [x, y + r], [x - r * 0.52, y + r * 0.7]], COL.ink, 1.7);
+    roughCircle(ctx, x, y - r * 0.68, r * 0.42, '#a64a50', COL.ink, 1.5, 9);
+    fillPoly(ctx, [[x - r * 0.5, y - r * 0.68], [x - r * 0.34, y - r * 1.22], [x + r * 0.34, y - r * 1.22], [x + r * 0.5, y - r * 0.68], [x + r * 0.23, y - r * 0.45], [x - r * 0.23, y - r * 0.45]], '#3a2029');
+    for (let i = -2; i <= 2; i++) fillPoly(ctx, [[x + i * r * 0.16 - 4, y - r * 1.18], [x + i * r * 0.16, y - r * (1.75 - Math.abs(i) * 0.08)], [x + i * r * 0.16 + 4, y - r * 1.18]], i === 0 ? '#ef5b6f' : '#b43750');
+    roughCircle(ctx, x - r * 0.16, y - r * 0.7, r * 0.07, '#f5d66a', null, 0, 6);
+    roughCircle(ctx, x + r * 0.16, y - r * 0.7, r * 0.07, '#f5d66a', null, 0, 6);
+    roughLine(ctx, x + r * 0.7, y - r * 0.55, x + r * 1.42, y + r * 1.22, '#4a2927', 7);
+    fillPoly(ctx, [[x + r * 0.68, y - r * 0.62], [x + r * 0.9, y - r * 1.2], [x + r * 1.02, y - r * 0.5]], '#e15a67');
+    roughCircle(ctx, x, y + r * 0.2, r * 0.23, null, '#f37486', 1.4, 9);
   } else {
     const cols = ['#789447', '#d5a13a', '#d75a45', '#7189a6'];
     roughEllipse(ctx, x, y, r * 1.08, r * 1.18, '#222328', COL.ink, 2.8, 12);
@@ -3841,8 +4532,10 @@ function drawEnemy(e) {
   if (!e.boss && e.hp < e.maxHp) {
     const w = e.r * 2;
     if (e.elite) {
-      roughBox(ctx, x - w / 2 - 9, y - e.r - 23, 18, 9, COL.gold, COL.ink, 0.8);
-      text(e.type === 'eliteShooter' ? '远程' : '精英', x - w / 2, y - e.r - 22, 5.5, COL.ink, 'center', true);
+      const badge = e.eliteName || (e.type === 'eliteShooter' ? '远程精英' : '近战精英');
+      const badgeW = Math.max(28, measure(badge, 5.5, true) + 8);
+      roughBox(ctx, x - badgeW / 2, y - e.r - 24, badgeW, 10, COL.gold, COL.ink, 0.8);
+      text(badge, x, y - e.r - 22.5, 5.5, COL.ink, 'center', true);
       roughLine(ctx, x - w / 2, y - e.r - 10, x + w / 2, y - e.r - 10, '#eadfcf', 5);
       roughLine(ctx, x - w / 2, y - e.r - 10, x - w / 2 + w * clamp(e.hp / e.maxHp, 0, 1), y - e.r - 10, COL.goldDark, 3.2);
     } else {
@@ -4242,7 +4935,9 @@ function drawHUD() {
     fillPoly(ctx, [[(VW - bw) / 2 - 25, VH - 30], [(VW - bw) / 2 - 21, VH - 40], [(VW - bw) / 2 - 16, VH - 34], [(VW - bw) / 2 - 10, VH - 40], [(VW - bw) / 2 - 7, VH - 30]], COL.gold);
     roughBox(ctx, (VW - bw) / 2, VH - 28, bw, 16, '#f4e6d4', COL.ink, 1.8);
     roughBox(ctx, (VW - bw) / 2 + 3, VH - 25, (bw - 6) * clamp(boss.hp / boss.maxHp, 0, 1), 10, COL.red, null, 0);
-    text(currentMap.boss, VW / 2, VH - 45, 10, COL.ink, 'center', true);
+    const bossNameW = Math.max(72, measure(currentMap.boss, 10, true) + 22);
+    roughBox(ctx, VW / 2 - bossNameW / 2, VH - 52, bossNameW, 17, '#fff6df', COL.ink, 1.1);
+    text(currentMap.boss, VW / 2, VH - 48.5, 10, COL.ink, 'center', true);
     if (boss.lastAttack) {
       const label = BOSS_ATTACK_LABELS[boss.lastAttack] || boss.lastAttack;
       roughBox(ctx, VW / 2 + bw / 2 - 72, VH - 49, 72, 14, boss.tele > 0 ? '#fff0a6' : '#fff9ec', COL.ink, 0.9);
@@ -4262,12 +4957,91 @@ function drawHUD() {
   }
 }
 
+function drawBossIntro() {
+  const fadeIn = clamp((3.6 - bossIntroT) / 0.45, 0, 1);
+  const fadeOut = clamp(bossIntroT / 0.55, 0, 1);
+  const alpha = Math.min(fadeIn, fadeOut);
+  const title = BOSS_TITLES[currentMap.id] || '章节守卫';
+  const objective = BOSS_OBJECTIVES[currentMap.id] || '击败守卫，继续前进';
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(36,27,24,0.62)';
+  ctx.fillRect(0, VH * 0.28, VW, portraitLayout ? 170 : 132);
+  roughLine(ctx, 34, VH * 0.28 + 8, VW - 34, VH * 0.28 + 5, currentMap.doodle, 2.4);
+  roughLine(ctx, 34, VH * 0.28 + (portraitLayout ? 162 : 124), VW - 34, VH * 0.28 + (portraitLayout ? 165 : 127), currentMap.doodle, 2.4);
+  text('B O S S  ·  ' + title, VW / 2, VH * 0.28 + 27, portraitLayout ? 13 : 11, '#f8e9ca', 'center', true);
+  text(currentMap.boss, VW / 2, VH * 0.28 + 57, portraitLayout ? 31 : 27, '#fff8e8', 'center', true, -0.025);
+  text('第 ' + (levelIdx + 1) + ' 关 · ' + objective, VW / 2, VH * 0.28 + 96, portraitLayout ? 10 : 9, '#f1d4bd', 'center');
+  ctx.restore();
+}
+
+function drawStoryPaperCrane(x, y, s, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  fillPoly(ctx, [[-s * 1.4, 0], [0, -s * 0.5], [s * 1.4, 0], [0, s * 0.42]], color);
+  strokePoly(ctx, [[-s * 1.4, 0], [0, -s * 0.5], [s * 1.4, 0], [0, s * 0.42]], COL.ink, 1.1);
+  fillPoly(ctx, [[0, -s * 0.5], [s * 0.35, -s * 1.55], [s * 0.62, -s * 0.18]], tint(color, 0.18));
+  strokePoly(ctx, [[0, -s * 0.5], [s * 0.35, -s * 1.55], [s * 0.62, -s * 0.18]], COL.ink, 0.9);
+  ctx.restore();
+}
+
+function drawStoryOverlay() {
+  const data = storyChapter === -1 ? STORY_PROLOGUE : (CHAPTER_STORIES[storyChapter] || CHAPTER_STORIES[CHAPTER_STORIES.length - 1]);
+  const panelW = portraitLayout ? VW - 34 : 536;
+  const panelH = portraitLayout ? 390 : 294;
+  const panelX = (VW - panelW) / 2;
+  const panelY = portraitLayout ? Math.max(42, VH / 2 - panelH / 2) : 34;
+  const accent = storyChapter === 10 ? '#b63750' : (storyChapter === 9 ? '#6c9cb4' : '#b9893f');
+
+  ctx.fillStyle = 'rgba(30,24,22,0.66)';
+  ctx.fillRect(0, 0, VW, VH);
+  roughBox(ctx, panelX + 5, panelY + 7, panelW, panelH, 'rgba(52,39,32,0.28)', null, 0);
+  roughBox(ctx, panelX, panelY, panelW, panelH, '#fff6df', COL.ink, 2.2);
+  roughLine(ctx, panelX + 24, panelY + 52, panelX + panelW - 24, panelY + 50, accent, 2);
+  roughLine(ctx, panelX + 30, panelY + panelH - 55, panelX + panelW - 30, panelY + panelH - 58, '#c8aa7a', 1.2);
+
+  // 一根贯穿十一章的守页红线。
+  ctx.save();
+  ctx.globalAlpha = 0.72;
+  ctx.beginPath();
+  ctx.moveTo(panelX + 12, panelY + 16);
+  ctx.bezierCurveTo(panelX + 44, panelY + 78, panelX + 8, panelY + 180, panelX + 26, panelY + panelH - 20);
+  ctx.strokeStyle = storyChapter === 10 ? '#c6334d' : '#b14b42';
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+  ctx.restore();
+
+  drawStoryPaperCrane(panelX + panelW - 44, panelY + 34, 12, storyChapter === 10 ? '#d85a6b' : '#e8c66d');
+  text(data.chapter, panelX + 30, panelY + 18, 9, accent, 'left', true);
+  text(data.title, VW / 2, panelY + 62, portraitLayout ? 20 : 21, COL.ink, 'center', true, -0.018);
+
+  const firstY = panelY + (portraitLayout ? 119 : 112);
+  const lineGap = portraitLayout ? 46 : 35;
+  for (let i = 0; i < data.lines.length; i++) {
+    text(data.lines[i], VW / 2, firstY + i * lineGap, portraitLayout ? 10 : 10.5, COL.inkSoft, 'center');
+  }
+
+  roughBox(ctx, panelX + 58, panelY + panelH - 86, panelW - 116, 28, tint(accent, 0.12), accent, 1.1);
+  text(data.clue, VW / 2, panelY + panelH - 79, portraitLayout ? 9 : 9.5, COL.ink, 'center', true);
+  const progress = storyChapter === -1 ? '寻母之旅即将开始' : ('寻母线索 ' + Math.min(11, storyChapter + 1) + ' / 11');
+  text(progress, panelX + 28, panelY + panelH - 34, 7.5, COL.inkSoft, 'left');
+  text(storyChapter === 10 ? '点击 · 牵住母亲的手' : '点击 / 按任意键 · 继续旅程', panelX + panelW - 28, panelY + panelH - 34, 8, accent, 'right', true);
+}
+
 function drawOverlays() {
+  if (state === 'story') {
+    drawStoryOverlay();
+    return;
+  }
   if (levelClear) {
     ctx.fillStyle = 'rgba(253,246,228,0.86)';
     ctx.fillRect(0, 0, VW, VH);
     text('关 卡 完 成', VW / 2, 122, 26, COL.goldDark, 'center', true, -0.02);
     text('第 ' + (levelIdx + 1) + ' 关 · ' + currentMap.name, VW / 2, 162, 11, COL.ink, 'center');
+    return;
+  }
+  if (state === 'play' && bossIntroT > 0) {
+    drawBossIntro();
     return;
   }
   if (state === 'levelup') {
@@ -4317,10 +5091,10 @@ function drawOverlays() {
   } else if (state === 'win') {
     ctx.fillStyle = 'rgba(253,246,228,0.92)';
     ctx.fillRect(0, 0, VW, VH);
-    text('通 关 ！', VW / 2, 92, 30, COL.goldDark, 'center', true, -0.02);
+    text('母 亲 平 安 归 来', VW / 2, 92, 28, COL.goldDark, 'center', true, -0.02);
     doodleStar(ctx, VW / 2 - 90, 108, 10, COL.gold, 2.4);
     doodleStar(ctx, VW / 2 + 90, 108, 10, COL.gold, 2.4);
-    text('剧情通关 · 已解锁无尽模式', VW / 2, 142, 13, COL.ink, 'center');
+    text('寻母故事完成 · 已解锁无尽模式', VW / 2, 142, 13, COL.ink, 'center');
     text(playerName + ' · 存活 ' + Math.floor(time) + ' 秒 · 击杀 ' + kills + ' · 等级 ' + player.level, VW / 2, 170, 11, COL.ink, 'center');
     if (Math.floor(performance.now() / 500) % 2 === 0) {
       text('点击 / 按任意键 再来一局', VW / 2, 210, 12, COL.ink, 'center', true);
@@ -4328,32 +5102,554 @@ function drawOverlays() {
   }
 }
 
+function drawSeasonBird(x, y, size, flap) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = '#4f4a43';
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.moveTo(-size, 0);
+  ctx.quadraticCurveTo(-size * 0.45, -size * (0.35 + flap * 0.25), 0, 0);
+  ctx.quadraticCurveTo(size * 0.45, -size * (0.35 - flap * 0.25), size, 0);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSeasonButterfly(x, y, size, phase, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(Math.sin(phase) * 0.22);
+  const wing = 0.55 + Math.abs(Math.sin(phase * 2.4)) * 0.55;
+  roughEllipse(ctx, -size * 0.45, 0, size * wing, size * 0.65, color, COL.ink, 0.65, 7);
+  roughEllipse(ctx, size * 0.45, 0, size * wing, size * 0.65, tint(color, 0.18), COL.ink, 0.65, 7);
+  roughLine(ctx, 0, -size * 0.34, 0, size * 0.42, COL.ink, 0.8);
+  ctx.restore();
+}
+
+function drawSeasonRabbit(x, y, size, phase) {
+  const hop = Math.abs(Math.sin(phase)) * size * 0.38;
+  ctx.save();
+  ctx.translate(x, y - hop);
+  ctx.scale(size, size);
+  roughEllipse(ctx, 0, 0, 12, 7, '#f2e8d4', COL.ink, 1, 9);
+  roughCircle(ctx, 10, -5, 6, '#f5ead8', COL.ink, 1, 8);
+  roughEllipse(ctx, 8, -14, 2.4, 7, '#f0dfc9', COL.ink, 0.8, 7);
+  roughEllipse(ctx, 13, -14, 2.4, 7, '#f0dfc9', COL.ink, 0.8, 7);
+  roughCircle(ctx, -11, -1, 3.4, '#fffaf0', COL.ink, 0.7, 7);
+  roughCircle(ctx, 12, -6, 1, COL.ink, null, 0, 5);
+  roughLine(ctx, -5, 6, -11 - Math.sin(phase) * 4, 9, COL.ink, 1.1);
+  roughLine(ctx, 6, 5, 12 + Math.sin(phase) * 4, 8, COL.ink, 1.1);
+  ctx.restore();
+}
+
+function drawSeasonMapleLeaf(x, y, size, rotation, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  fillPoly(ctx, [
+    [0, -size], [size * 0.23, -size * 0.45], [size * 0.62, -size * 0.62],
+    [size * 0.48, -size * 0.15], [size, 0], [size * 0.38, size * 0.22],
+    [size * 0.48, size * 0.72], [0, size * 0.38], [-size * 0.48, size * 0.72],
+    [-size * 0.38, size * 0.22], [-size, 0], [-size * 0.48, -size * 0.15],
+    [-size * 0.62, -size * 0.62], [-size * 0.23, -size * 0.45],
+  ], color);
+  roughLine(ctx, 0, size * 0.2, 0, size * 1.15, '#7c4932', 0.8);
+  ctx.restore();
+}
+
+function drawSeasonSnowman(x, baseY, scaleValue) {
+  ctx.save();
+  ctx.translate(x, baseY);
+  ctx.scale(scaleValue, scaleValue);
+  roughCircle(ctx, 0, -10, 15, '#fffdf7', '#7592a3', 1.3, 10);
+  roughCircle(ctx, 0, -31, 11, '#fffdf7', '#7592a3', 1.2, 9);
+  roughCircle(ctx, -4, -33, 1.2, COL.ink, null, 0, 5);
+  roughCircle(ctx, 4, -33, 1.2, COL.ink, null, 0, 5);
+  fillPoly(ctx, [[0, -29], [8, -27], [0, -25]], '#e58a32');
+  ctx.strokeStyle = COL.ink;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(0, -31, 6, 0.35, Math.PI - 0.35); ctx.stroke();
+  roughCircle(ctx, 0, -14, 1.4, COL.ink, null, 0, 5);
+  roughCircle(ctx, 0, -7, 1.4, COL.ink, null, 0, 5);
+  roughLine(ctx, -13, -17, -23, -25, '#6d513b', 1.4);
+  roughLine(ctx, 13, -17, 23, -24, '#6d513b', 1.4);
+  roughBox(ctx, -11, -45, 22, 5, '#5c6f7c', COL.ink, 1);
+  roughBox(ctx, -7, -55, 14, 11, '#5c6f7c', COL.ink, 1);
+  ctx.restore();
+}
+
+function drawMenuSeasonBackground(now) {
+  const season = currentMenuSeason();
+  const image = menuSeasonImages[season.id];
+  if (!image || !image.complete || !image.naturalWidth) return false;
+  const sourceRatio = image.naturalWidth / image.naturalHeight;
+  const targetRatio = VW / VH;
+  let sx = 0, sy = 0, sw = image.naturalWidth, sh = image.naturalHeight;
+  if (sourceRatio > targetRatio) {
+    sw = image.naturalHeight * targetRatio;
+    const focus = { spring: 0.48, summer: 0.52, autumn: 0.52, winter: 0.56 }[season.id];
+    sx = clamp(image.naturalWidth * focus - sw / 2, 0, image.naturalWidth - sw);
+  } else {
+    sh = image.naturalWidth / targetRatio;
+    sy = clamp((image.naturalHeight - sh) * 0.48, 0, image.naturalHeight - sh);
+  }
+  // 让整幅插画有很轻的“呼吸”和视差，避免底图像一张贴死的海报。
+  const driftX = Math.sin(now * 0.11 + menuSeasonIndex) * Math.min(5, VW * 0.008);
+  const driftY = Math.cos(now * 0.09 + menuSeasonIndex * 0.7) * Math.min(3, VH * 0.006);
+  const breathe = 1.018 + Math.sin(now * 0.075 + menuSeasonIndex) * 0.006;
+  const dw = VW * breathe;
+  const dh = VH * breathe;
+  ctx.drawImage(image, sx, sy, sw, sh, (VW - dw) / 2 + driftX, (VH - dh) / 2 + driftY, dw, dh);
+
+  const wash = ctx.createRadialGradient(VW / 2, VH * 0.48, 10, VW / 2, VH * 0.48, Math.max(VW, VH) * 0.58);
+  wash.addColorStop(0, 'rgba(253,246,228,0.58)');
+  wash.addColorStop(0.5, 'rgba(253,246,228,0.22)');
+  wash.addColorStop(1, 'rgba(253,246,228,0.02)');
+  ctx.fillStyle = wash;
+  ctx.fillRect(0, 0, VW, VH);
+  return true;
+}
+
+function drawSwayingMeadow(now, colors, flowers) {
+  const rng = makeRng(menuSeasonSeed ^ 0x6a09e667);
+  const baseY = VH + 3;
+  const count = portraitLayout ? 34 : 54;
+  ctx.save();
+  ctx.globalAlpha = 0.78;
+  for (let i = 0; i < count; i++) {
+    const x = rng() * VW;
+    const h = 9 + rng() * (portraitLayout ? 22 : 17);
+    const speed = 1.1 + rng() * 1.2;
+    const sway = Math.sin(now * speed + i * 0.83) * (2.2 + rng() * 2.8);
+    const color = colors[i % colors.length];
+    ctx.beginPath();
+    ctx.moveTo(x, baseY);
+    ctx.quadraticCurveTo(x + sway * 0.35, baseY - h * 0.55, x + sway, baseY - h);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1 + rng() * 1.25;
+    ctx.stroke();
+    if (flowers && i % 6 === 0) {
+      const fx = x + sway;
+      const fy = baseY - h;
+      const petal = i % 12 === 0 ? '#fff7e8' : '#f2a5ba';
+      for (let p = 0; p < 4; p++) {
+        const a = now * 0.18 + p * TAU / 4;
+        roughCircle(ctx, fx + Math.cos(a) * 2.2, fy + Math.sin(a) * 2.2, 1.7, petal, null, 0, 5);
+      }
+      roughCircle(ctx, fx, fy, 1.2, '#e7b83d', null, 0, 5);
+    }
+  }
+  ctx.restore();
+}
+
+function drawSummerCloud(x, y, scaleValue, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x, y);
+  ctx.scale(scaleValue, scaleValue);
+  roughEllipse(ctx, -12, 2, 15, 6, '#fff9df', null, 0, 10);
+  roughCircle(ctx, -5, -3, 7, '#fff9df', null, 0, 8);
+  roughCircle(ctx, 4, -5, 9, '#fff9df', null, 0, 9);
+  roughCircle(ctx, 13, 0, 6, '#fff9df', null, 0, 8);
+  ctx.restore();
+}
+
+function drawAutumnWind(now) {
+  ctx.save();
+  ctx.globalAlpha = 0.34;
+  for (let i = 0; i < 4; i++) {
+    const travel = (now * (42 + i * 7) + i * 173 + menuSeasonSeed % 91) % (VW + 150) - 110;
+    const y = 48 + i * 70 + Math.sin(now * 1.1 + i) * 13;
+    ctx.beginPath();
+    ctx.moveTo(travel, y);
+    ctx.bezierCurveTo(travel + 38, y - 9, travel + 72, y + 11, travel + 112, y - 2);
+    ctx.strokeStyle = i % 2 ? '#b85b38' : '#e1a24c';
+    ctx.lineWidth = 1.15;
+    ctx.setLineDash([7, 7]);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawMenuSeason(now) {
+  const season = currentMenuSeason();
+  const rng = makeRng(menuSeasonSeed);
+  withInkSeed(menuSeasonSeed, () => {
+    ctx.save();
+    if (season.id === 'spring') {
+      drawSwayingMeadow(now, ['#4f8a4d', '#6fa35b', '#80ad68'], true);
+      for (let i = 0; i < 9; i++) {
+        const speed = 8 + rng() * 9;
+        const x = ((rng() * VW + now * speed + i * 53) % (VW + 50)) - 25;
+        const y = 34 + rng() * Math.min(170, VH * 0.4) + Math.sin(now * 1.5 + i) * 12;
+        drawSeasonButterfly(x, y, 3.5 + rng() * 2.4, now + i * 0.8, i % 2 ? '#e78caf' : '#f0c84b');
+      }
+      for (let i = 0; i < 18; i++) {
+        const p = (rng() * 1.4 + now * (0.035 + rng() * 0.025)) % 1.25;
+        const x = p * VW - VW * 0.12 + Math.sin(now * 1.2 + i) * 20;
+        const y = 18 + rng() * (VH * 0.72) + Math.sin(now * 1.7 + i * 0.8) * 11;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(now * (0.8 + rng()) + i);
+        roughEllipse(ctx, 0, 0, 2.6 + rng() * 1.7, 1.3, i % 3 ? '#f2abc0' : '#fff2ef', '#a97277', 0.35, 6);
+        ctx.restore();
+      }
+    } else if (season.id === 'summer') {
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = 0.12 + Math.sin(now * 0.7) * 0.045;
+      const rayShift = Math.sin(now * 0.22) * VW * 0.08;
+      fillPoly(ctx, [[VW, -10], [VW * 0.70 + rayShift, 0], [VW * 0.52 + rayShift, VH], [VW * 0.76 + rayShift, VH]], '#fff0a4');
+      fillPoly(ctx, [[VW, 0], [VW * 0.86 + rayShift * 0.5, 0], [VW * 0.72 + rayShift * 0.5, VH], [VW, VH]], '#fff9c8');
+      ctx.restore();
+      drawSwayingMeadow(now, ['#4c873f', '#72a24b', '#a3ad43'], false);
+      drawSummerCloud(((now * 7 + menuSeasonSeed % 130) % (VW + 100)) - 50, 34, 0.75, 0.32);
+      drawSummerCloud(((now * 5 + 230 + menuSeasonSeed % 90) % (VW + 120)) - 60, 80, 0.52, 0.22);
+      for (let i = 0; i < 7; i++) {
+        const x = ((rng() * VW + now * (17 + i * 2)) % (VW + 80)) - 40;
+        const y = 30 + rng() * 85 + Math.sin(now * 0.8 + i) * 5;
+        drawSeasonBird(x, y, 7 + rng() * 4, Math.sin(now * 4.2 + i));
+      }
+      const rabbitX = ((now * 42 + menuSeasonSeed % 190) % (VW + 90)) - 45;
+      drawSeasonRabbit(rabbitX, portraitLayout ? 164 : 146, portraitLayout ? 0.78 : 0.68, now * 6);
+    } else if (season.id === 'autumn') {
+      drawAutumnWind(now);
+      drawSwayingMeadow(now, ['#8b5d34', '#b06a37', '#d18a3d'], false);
+      const leafColors = ['#c64f34', '#de7b32', '#e7a73b', '#a94a38'];
+      for (let i = 0; i < 32; i++) {
+        const speed = 12 + rng() * 19;
+        const fall = (rng() * VH + now * speed + i * 29) % (VH + 40) - 20;
+        const x = (rng() * VW + Math.sin(now * (0.8 + rng()) + i) * (28 + rng() * 22) + VW) % VW;
+        drawSeasonMapleLeaf(x, fall, 3.5 + rng() * 4.2, now * (1 + rng()) + i, leafColors[i % leafColors.length]);
+      }
+    } else {
+      ctx.save();
+      ctx.globalAlpha = 0.2;
+      for (let i = 0; i < 4; i++) {
+        const gustX = (now * (28 + i * 5) + i * 151) % (VW + 170) - 130;
+        const gustY = 52 + i * 72 + Math.sin(now * 0.8 + i) * 18;
+        ctx.beginPath();
+        ctx.moveTo(gustX, gustY);
+        ctx.quadraticCurveTo(gustX + 55, gustY - 12, gustX + 118, gustY + 2);
+        ctx.strokeStyle = '#eaf7ff';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([3, 10]);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.restore();
+      for (let i = 0; i < 62; i++) {
+        const speed = 8 + rng() * 20;
+        const y = (rng() * VH + now * speed + i * 17) % (VH + 20) - 10;
+        const depth = 0.45 + rng() * 0.95;
+        const x = (rng() * VW + Math.sin(now * (0.45 + rng()) + i) * (18 + depth * 12) + VW) % VW;
+        roughCircle(ctx, x, y, 0.9 + rng() * 2.8 * depth, '#ffffff', '#89a8b9', 0.35, 6);
+      }
+    }
+    ctx.restore();
+  });
+}
+
+function menuLookTarget(nowMs) {
+  if (nowMs >= menuInteraction.lockUntil) {
+    menuInteraction.focusX = menuInteraction.pointerX;
+    menuInteraction.focusY = menuInteraction.pointerY;
+  }
+  return { x: menuInteraction.focusX, y: menuInteraction.focusY };
+}
+
+function menuReactionStrength(nowMs, x, y) {
+  let strength = 0;
+  for (const click of menuInteraction.clicks) {
+    const age = (nowMs - click.born) / 1000;
+    if (age < 0 || age > 0.75) continue;
+    const proximity = 1 - clamp(Math.hypot(x - click.x, y - click.y) / 330, 0, 0.82);
+    const pulse = Math.sin(clamp(age / 0.58, 0, 1) * Math.PI);
+    strength = Math.max(strength, pulse * proximity);
+  }
+  return strength;
+}
+
+function drawMenuClickFx(nowMs) {
+  menuInteraction.clicks = menuInteraction.clicks.filter((click) => nowMs - click.born < 1050);
+  for (const click of menuInteraction.clicks) {
+    const age = (nowMs - click.born) / 1000;
+    const p = clamp(age / 0.9, 0, 1);
+    const alpha = (1 - p) * 0.82;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.setLineDash([5, 5]);
+    roughCircle(ctx, click.x, click.y, 8 + p * 35, null, p < 0.48 ? COL.goldDark : COL.coral, 1.8, 12);
+    ctx.setLineDash([]);
+    for (let i = 0; i < 7; i++) {
+      const a = click.seed + i * TAU / 7;
+      const d = 10 + p * (25 + (i % 3) * 7);
+      const sx = click.x + Math.cos(a) * d;
+      const sy = click.y + Math.sin(a) * d;
+      if (i % 2 === 0) doodleStar(ctx, sx, sy, 2.8 + (1 - p) * 2.2, i % 3 ? COL.gold : COL.blue, 1);
+      else roughCircle(ctx, sx, sy, 1.8 + (1 - p), i % 3 ? COL.coral : COL.ochre, null, 0, 6);
+    }
+    ctx.restore();
+  }
+}
+
+function drawStartButtons() {
+  roughBox(ctx, startBtn.x, startBtn.y, startBtn.w, startBtn.h, '#f5c542', COL.ink, 2.2);
+  if (!suspendedRun) {
+    text('开始一局', startBtn.x + startBtn.w / 2, startBtn.y + (portraitLayout ? 13 : 12), portraitLayout ? 19 : 18, COL.ink, 'center', true);
+    return;
+  }
+
+  text('继续第 ' + suspendedRun.level + ' 关', startBtn.x + startBtn.w / 2, startBtn.y + (portraitLayout ? 8 : 7), portraitLayout ? 15 : 14, COL.ink, 'center', true);
+  const mm = Math.floor(suspendedRun.seconds / 60);
+  const ss = String(suspendedRun.seconds % 60).padStart(2, '0');
+  text(suspendedRun.mapName + ' · ' + mm + ':' + ss, startBtn.x + startBtn.w / 2, startBtn.y + (portraitLayout ? 31 : 28), 7, COL.inkSoft, 'center', true);
+
+  roughBox(ctx, restartBtn.x, restartBtn.y, restartBtn.w, restartBtn.h, '#fffdf8', COL.ink, 1.7);
+  text('重新开始', restartBtn.x + restartBtn.w / 2, restartBtn.y + (portraitLayout ? 17 : 15), portraitLayout ? 11 : 10.5, COL.ink, 'center', true);
+}
+
+function drawMenuSceneGrass(now, colors, count) {
+  const R = makeRng(0x51a7c3 ^ (MENU_SCENE_ID || '').length * 7919);
+  ctx.save();
+  ctx.globalAlpha = 0.88;
+  for (let i = 0; i < count; i++) {
+    const x = R() * VW;
+    const h = 7 + R() * 16;
+    const sway = Math.sin(now * (1.2 + R()) + i * 0.73) * (2 + R() * 3);
+    ctx.beginPath();
+    ctx.moveTo(x, VH + 2);
+    ctx.quadraticCurveTo(x + sway * 0.35, VH - h * 0.55, x + sway, VH - h);
+    ctx.strokeStyle = colors[i % colors.length];
+    ctx.lineWidth = 1 + R() * 1.2;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawMenuWindTrail(x, y, length, color, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.25;
+  ctx.setLineDash([7, 6]);
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.bezierCurveTo(x + length * 0.32, y - 8, x + length * 0.68, y + 9, x + length, y - 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawMenuCactus(x, y, scaleValue) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scaleValue, scaleValue);
+  roughBox(ctx, -4, -24, 8, 25, '#6f984c', COL.ink, 1.2);
+  roughLine(ctx, -3, -12, -11, -15, '#6f984c', 6);
+  roughLine(ctx, -11, -15, -11, -23, '#6f984c', 6);
+  roughLine(ctx, 3, -8, 11, -12, '#6f984c', 6);
+  roughLine(ctx, 11, -12, 11, -19, '#6f984c', 6);
+  ctx.restore();
+}
+
+function drawMenuSceneBackdrop(map, now) {
+  const id = map.id;
+  const R = makeRng(mapSeed(id) ^ 0x4d454e55);
+  withInkSeed(mapSeed(id) ^ 0x5343454e, () => {
+    ctx.save();
+    if (id === 'forest') {
+      fillPoly(ctx, [[0, 0], [82, 0], [68, 95], [42, 145], [0, 160]], '#82643d');
+      roughLine(ctx, 48, 76, 103, 25, '#82643d', 10);
+      for (let i = 0; i < 9; i++) roughCircle(ctx, 30 + (i % 4) * 28, 18 + Math.floor(i / 4) * 25, 23 + (i % 2) * 5, i % 2 ? '#7f9f48' : '#9ab85b', COL.ink, 1.1, 10);
+      drawMenuSceneGrass(now, ['#5b7f3d', '#7b9c49', '#9bb75f'], 58);
+      for (let i = 0; i < 7; i++) {
+        const x = (70 + i * 91 + now * (8 + i)) % (VW + 40) - 20;
+        const y = 36 + (i * 27) % 115 + Math.sin(now * 1.8 + i) * 10;
+        drawSeasonButterfly(x, y, 4.2, now * 2 + i, i % 2 ? '#e0a346' : '#d8798e');
+      }
+    } else if (id === 'waste') {
+      roughLine(ctx, 38, VH, 48, 105, '#6f4e38', 9);
+      roughLine(ctx, 48, 112, 18, 76, '#6f4e38', 5);
+      roughLine(ctx, 50, 126, 88, 86, '#6f4e38', 5);
+      for (let i = 0; i < 5; i++) {
+        const x = ((now * (18 + i * 2) + i * 137) % (VW + 80)) - 40;
+        drawSeasonBird(x, 38 + i * 18 + Math.sin(now + i) * 5, 7 + i % 2 * 2, Math.sin(now * 4 + i));
+      }
+      for (let i = 0; i < 5; i++) drawMenuWindTrail(((now * 38 + i * 143) % (VW + 140)) - 120, 55 + i * 55, 105, '#a76b42', 0.42);
+      const tumbleX = (now * 34 + 130) % (VW + 60) - 30;
+      roughCircle(ctx, tumbleX, VH - 28 - Math.abs(Math.sin(now * 3)) * 12, 13, null, '#8f6849', 1.4, 11);
+      roughLine(ctx, tumbleX - 9, VH - 36, tumbleX + 8, VH - 20, '#8f6849', 1);
+      roughLine(ctx, tumbleX + 8, VH - 36, tumbleX - 9, VH - 20, '#8f6849', 1);
+    } else if (id === 'desert') {
+      roughCircle(ctx, VW - 62, 54, 22, '#e7a93d', '#8b633d', 1.5, 12);
+      ctx.beginPath(); ctx.moveTo(0, VH - 82); ctx.quadraticCurveTo(VW * 0.25, VH - 130, VW * 0.52, VH - 72); ctx.quadraticCurveTo(VW * 0.78, VH - 28, VW, VH - 92); ctx.lineTo(VW, VH); ctx.lineTo(0, VH); ctx.fillStyle = '#e7bc68'; ctx.fill();
+      ctx.beginPath(); ctx.moveTo(0, VH - 48); ctx.quadraticCurveTo(VW * 0.38, VH - 102, VW, VH - 38); ctx.lineTo(VW, VH); ctx.lineTo(0, VH); ctx.fillStyle = '#efcf85'; ctx.fill();
+      drawMenuCactus(76, VH - 42, 1.15); drawMenuCactus(VW - 92, VH - 28, 0.75);
+      for (let i = 0; i < 6; i++) drawMenuWindTrail(((now * 44 + i * 131) % (VW + 150)) - 130, 70 + i * 38, 120, '#bd722f', 0.38);
+      for (let i = 0; i < 18; i++) roughCircle(ctx, (R() * VW + now * (20 + i)) % VW, 45 + R() * 225, 0.8 + R(), '#c98a3f', null, 0, 5);
+    } else if (id === 'swamp') {
+      roughEllipse(ctx, 92, VH - 45, 72, 23, '#78917d', '#425d43', 1.4, 13);
+      roughEllipse(ctx, VW - 85, VH - 28, 88, 27, '#6f8f7c', '#425d43', 1.3, 13);
+      for (let i = 0; i < 18; i++) {
+        const x = (i % 2 ? 22 : VW - 22) + Math.sin(i * 3.1) * 44;
+        const h = 20 + (i % 5) * 6;
+        roughLine(ctx, x, VH, x + Math.sin(now * 1.3 + i) * 4, VH - h, i % 2 ? '#4f6f3e' : '#6f8a45', 1.6);
+      }
+      for (let i = 0; i < 11; i++) {
+        const y = VH - ((now * (9 + i) + i * 29) % 130);
+        const x = 35 + (i * 71) % (VW - 70);
+        roughCircle(ctx, x + Math.sin(now + i) * 5, y, 1.4 + i % 3, null, '#b7d39c', 0.8, 7);
+      }
+      for (let i = 0; i < 4; i++) drawSeasonButterfly(90 + i * 150 + Math.sin(now + i) * 20, 55 + i * 28, 3.5, now * 3 + i, '#8fcab7');
+    } else if (id === 'ocean') {
+      ctx.fillStyle = 'rgba(113,174,187,0.22)'; ctx.fillRect(0, VH * 0.62, VW, VH * 0.38);
+      for (let row = 0; row < 5; row++) {
+        for (let i = 0; i < 7; i++) {
+          const x = i * 105 - ((now * (12 + row * 2)) % 105);
+          ctx.beginPath(); ctx.arc(x, VH * 0.65 + row * 22, 28, 0.2, Math.PI * 0.86); ctx.strokeStyle = row % 2 ? '#e6f4ef' : '#5f9fac'; ctx.lineWidth = 1.2; ctx.stroke();
+        }
+      }
+      for (let i = 0; i < 6; i++) {
+        const x = ((now * (17 + i) + i * 119) % (VW + 80)) - 40;
+        const y = VH * 0.7 + (i % 3) * 30;
+        ctx.save(); ctx.globalAlpha = 0.35; fillPoly(ctx, [[x - 9, y], [x, y - 4], [x + 8, y], [x, y + 4]], '#477f8d'); ctx.restore();
+      }
+      for (let i = 0; i < 5; i++) { const x = 30 + i * 145; roughLine(ctx, x, VH, x - 7, VH - 32 - i % 2 * 10, i % 2 ? '#d56b67' : '#7b9e74', 3); roughCircle(ctx, x - 7, VH - 36, 4, '#f0b67d', COL.ink, 0.6, 7); }
+    } else if (id === 'volcano') {
+      fillPoly(ctx, [[0, VH], [95, 185], [165, VH]], '#302a2d');
+      fillPoly(ctx, [[VW - 180, VH], [VW - 92, 160], [VW, VH]], '#302a2d');
+      for (let i = 0; i < 8; i++) {
+        const x = 24 + i * 86;
+        roughLine(ctx, x, VH, x + Math.sin(i * 2.3) * 18, VH - 42 - (i % 3) * 16, i % 2 ? '#e26432' : '#ffae3e', 2.2);
+      }
+      for (let i = 0; i < 28; i++) {
+        const y = VH - ((now * (22 + i % 5) + i * 37) % (VH + 30));
+        roughCircle(ctx, 20 + (i * 83) % (VW - 40), y, 1 + i % 3, i % 2 ? '#f07838' : '#ffc04b', null, 0, 6);
+      }
+      for (let i = 0; i < 4; i++) roughCircle(ctx, 110 + i * 135 + Math.sin(now * 0.4 + i) * 15, 42 + i % 2 * 35, 22 + i * 4, 'rgba(45,39,43,0.3)', null, 0, 10);
+    } else if (id === 'inferno') {
+      for (let i = 0; i < 7; i++) {
+        const x = 32 + i * 96;
+        roughLine(ctx, x, VH, x + Math.sin(i * 1.7) * 24, VH - 62 - (i % 2) * 30, i % 2 ? '#c63b5b' : '#7d2750', 2.2);
+        roughLine(ctx, x + 4, VH - 24, x + 23, VH - 48, '#ed6a82', 1.2);
+      }
+      for (let i = 0; i < 5; i++) {
+        const x = 65 + i * 130 + Math.sin(now * 0.7 + i) * 22;
+        const y = 60 + (i % 2) * 65 + Math.sin(now * 1.2 + i) * 12;
+        ctx.save(); ctx.globalAlpha = 0.32; roughCircle(ctx, x, y, 12 + i % 3 * 3, null, '#e16c91', 1.3, 10); doodleStar(ctx, x, y, 5, '#e16c91', 1); ctx.restore();
+      }
+      for (let i = 0; i < 18; i++) roughCircle(ctx, (i * 71 + now * 19) % VW, 35 + (i * 47) % 260, 1 + i % 2, '#bd3a66', null, 0, 5);
+    } else if (id === 'heaven') {
+      for (let i = 0; i < 8; i++) {
+        const x = ((i * 103 + now * (5 + i % 3)) % (VW + 130)) - 65;
+        const y = 40 + (i % 4) * 72;
+        ctx.save(); ctx.globalAlpha = 0.76; roughCircle(ctx, x - 14, y, 13, '#f9fbf6', '#8da7bc', 0.8, 9); roughCircle(ctx, x, y - 7, 18, '#fffdf5', '#8da7bc', 0.8, 10); roughCircle(ctx, x + 17, y, 12, '#f9fbf6', '#8da7bc', 0.8, 9); ctx.restore();
+      }
+      for (let i = 0; i < 16; i++) doodleStar(ctx, 24 + (i * 91) % (VW - 48), 28 + (i * 53) % (VH - 56), 2 + i % 3, i % 2 ? '#c89d37' : '#f4e3a4', 0.8);
+      const craneX = (now * 24 + 90) % (VW + 70) - 35;
+      fillPoly(ctx, [[craneX - 13, 82], [craneX, 76], [craneX + 13, 82], [craneX, 87]], '#fff7dc'); strokePoly(ctx, [[craneX - 13, 82], [craneX, 76], [craneX + 13, 82], [craneX, 87]], '#8b784c', 0.9);
+    } else if (id === 'snow') {
+      fillPoly(ctx, [[0, VH], [0, 178], [92, 76], [176, 190], [268, 58], [382, 184], [505, 82], [620, 178], [VW, 120], [VW, VH]], '#a9c4d0');
+      fillPoly(ctx, [[0, VH], [0, 228], [98, 142], [190, 224], [312, 121], [422, 225], [548, 147], [VW, 216], [VW, VH]], '#dbe9ed');
+      fillPoly(ctx, [[61, 151], [92, 76], [126, 152], [95, 128]], '#f8fcfd');
+      fillPoly(ctx, [[226, 125], [268, 58], [315, 130], [268, 103]], '#f8fcfd');
+      fillPoly(ctx, [[462, 126], [505, 82], [545, 139], [506, 117]], '#f8fcfd');
+      for (let i = 0; i < 9; i++) {
+        const x = 30 + i * 78;
+        const h = 28 + (i % 4) * 8;
+        fillPoly(ctx, [[x, VH - 12 - h], [x - 15, VH - 12], [x + 15, VH - 12]], i % 2 ? '#5e7c76' : '#6b8b82');
+        fillPoly(ctx, [[x, VH - 4 - h * 0.72], [x - 19, VH - 4], [x + 19, VH - 4]], i % 2 ? '#698c83' : '#78988b');
+      }
+      for (let i = 0; i < 36; i++) {
+        const x = ((i * 83 + now * (14 + i % 5)) % (VW + 50)) - 25;
+        const y = ((i * 47 + now * (17 + i % 4)) % (VH + 30)) - 15;
+        roughCircle(ctx, x, y, 1.2 + i % 3 * 0.6, '#ffffff', '#8bb2c2', 0.35, 6);
+      }
+      for (let i = 0; i < 4; i++) drawMenuWindTrail(((now * 34 + i * 178) % (VW + 150)) - 130, 62 + i * 66, 118, '#edf9fc', 0.7);
+    } else if (id === 'crimson') {
+      roughCircle(ctx, VW - 92, 72, 38, '#ba304d', '#31161f', 2, 13);
+      roughCircle(ctx, VW - 78, 61, 35, '#3b2029', null, 0, 12);
+      for (let i = 0; i < 7; i++) {
+        const x = 24 + i * 104;
+        roughLine(ctx, x, VH, x + Math.sin(i * 1.9) * 25, VH - 82 - (i % 3) * 24, '#301820', 5);
+        roughLine(ctx, x + 2, VH - 48, x - 24, VH - 76, '#301820', 3);
+        roughLine(ctx, x + 5, VH - 62, x + 31, VH - 91, '#301820', 3);
+      }
+      for (let i = 0; i < 7; i++) {
+        const x = ((now * (10 + i) + i * 117) % (VW + 170)) - 85;
+        const y = 62 + (i % 4) * 67 + Math.sin(now * 0.8 + i) * 9;
+        ctx.save(); ctx.globalAlpha = 0.13; roughEllipse(ctx, x, y, 58 + i * 4, 12, '#8d2841', null, 0, 11); ctx.restore();
+      }
+      for (let i = 0; i < 24; i++) {
+        const x = (i * 73 + Math.sin(now * 0.5 + i) * 18) % VW;
+        const y = VH - ((now * (8 + i % 4) + i * 41) % (VH + 20));
+        roughCircle(ctx, x, y, 1 + i % 3 * 0.55, i % 2 ? '#d34b5f' : '#f06b7c', null, 0, 5);
+      }
+    } else {
+      const cols = ['#6f8d3b', '#d5a13a', '#d75a45', '#7189a6'];
+      ctx.save(); ctx.globalAlpha = 0.18;
+      ctx.fillStyle = cols[0]; ctx.fillRect(0, 0, VW / 2, VH / 2);
+      ctx.fillStyle = cols[1]; ctx.fillRect(VW / 2, 0, VW / 2, VH / 2);
+      ctx.fillStyle = cols[2]; ctx.fillRect(0, VH / 2, VW / 2, VH / 2);
+      ctx.fillStyle = cols[3]; ctx.fillRect(VW / 2, VH / 2, VW / 2, VH / 2);
+      ctx.restore();
+      for (let i = 0; i < 28; i++) {
+        const a = now * (0.3 + i % 4 * 0.08) + i * TAU / 28;
+        const r = 72 + (i % 6) * 16;
+        const x = VW / 2 + Math.cos(a) * r;
+        const y = VH / 2 + Math.sin(a) * r * 0.55;
+        if (i % 4 === 0) drawSeasonMapleLeaf(x, y, 3.5, a, cols[0]);
+        else if (i % 4 === 1) roughCircle(ctx, x, y, 1.8, cols[1], null, 0, 6);
+        else if (i % 4 === 2) doodleStar(ctx, x, y, 3, cols[2], 0.9);
+        else roughCircle(ctx, x, y, 2.2, '#eef5ff', cols[3], 0.5, 6);
+      }
+    }
+
+    const wash = ctx.createRadialGradient(VW / 2, VH * 0.49, 18, VW / 2, VH * 0.49, Math.max(VW, VH) * 0.54);
+    wash.addColorStop(0, 'rgba(253,246,228,0.82)');
+    wash.addColorStop(0.46, 'rgba(253,246,228,0.48)');
+    wash.addColorStop(1, 'rgba(253,246,228,0.02)');
+    ctx.fillStyle = wash;
+    ctx.fillRect(0, 0, VW, VH);
+    ctx.restore();
+  });
+}
+
 function drawMenu() {
   const now = performance.now() / 1000;
-  const tile = getPaperTile();
+  const nowMs = now * 1000;
+  const look = menuLookTarget(nowMs);
+  const previewMap = MENU_SCENE_ID ? MAPS.find((map) => map.id === MENU_SCENE_ID) : null;
+  const tile = getPaperTile(previewMap || undefined);
   for (let x = 0; x < VW; x += TILE_P) {
     for (let y = 0; y < VH; y += TILE_P) ctx.drawImage(tile, x, y);
   }
+  if (previewMap) drawMenuSceneBackdrop(previewMap, now);
   if (portraitLayout) {
     drawMenuPortrait(now);
     return;
   }
 
-  // 装饰
-  roughCircle(ctx, 72, 60, 20, COL.gold, COL.ink, 2, 10);
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * TAU + 0.2;
-    roughLine(ctx, 72 + Math.cos(a) * 27, 60 + Math.sin(a) * 27, 72 + Math.cos(a) * 35, 60 + Math.sin(a) * 35, COL.ink, 1.6);
+  // 恢复最初首页的太阳与随手涂鸦装饰。
+  if (!previewMap) {
+    roughCircle(ctx, 72, 60, 20, COL.gold, COL.ink, 2, 10);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * TAU + 0.2;
+      roughLine(ctx, 72 + Math.cos(a) * 27, 60 + Math.sin(a) * 27, 72 + Math.cos(a) * 35, 60 + Math.sin(a) * 35, COL.ink, 1.6);
+    }
+    doodleStar(ctx, 520, 70, 6, COL.gold, 1.6);
+    doodleStar(ctx, 560, 110, 5, COL.red, 1.5);
+    doodleStar(ctx, 120, 150, 4, COL.blue, 1.4);
   }
-  doodleStar(ctx, 520, 70, 6, COL.gold, 1.6);
-  doodleStar(ctx, 560, 110, 5, COL.red, 1.5);
-  doodleStar(ctx, 120, 150, 4, COL.blue, 1.4);
 
   // 小角色排排站
   const bob = Math.sin(now * 2) * 3;
-  drawMenuSlime(250, 176 + bob);
-  drawMenuSlime(300, 182 + Math.sin(now * 2 + 1) * 3);
-  drawMenuPlayer(400, 176 + Math.sin(now * 2 + 2) * 3);
+  drawMenuSlime(250, 176 + bob, look.x, look.y, menuReactionStrength(nowMs, 250, 176));
+  drawMenuSlime(300, 182 + Math.sin(now * 2 + 1) * 3, look.x, look.y, menuReactionStrength(nowMs, 300, 182));
+  drawMenuPlayer(400, 176 + Math.sin(now * 2 + 2) * 3, look.x, look.y, menuReactionStrength(nowMs, 400, 176));
+  drawMenuClickFx(nowMs);
 
   text('纸 片 幸 存 者', VW / 2, 62, 40, COL.ink, 'center', true, -0.02);
   roughLine(ctx, VW / 2 - 150, 116, VW / 2 + 150, 114, COL.ink, 2);
@@ -4363,8 +5659,7 @@ function drawMenu() {
   text('昵称 · ' + playerName, VW / 2, nameBtn.y + 3, 9, COL.ink, 'center', true);
   roughLine(ctx, nameBtn.x + nameBtn.w - 16, nameBtn.y + 5, nameBtn.x + nameBtn.w - 10, nameBtn.y + 11, COL.goldDark, 1.5);
 
-  roughBox(ctx, startBtn.x, startBtn.y, startBtn.w, startBtn.h, '#f5c542', COL.ink, 2.2);
-  text('开始一局', VW / 2, startBtn.y + 12, 18, COL.ink, 'center', true);
+  drawStartButtons();
 
   // 难度选择
   text('难度', VW / 2, 261, 9, COL.inkSoft, 'center');
@@ -4386,10 +5681,12 @@ function drawMenu() {
   roughBox(ctx, musicBtn.x, musicBtn.y, musicBtn.w, musicBtn.h, Music.enabled ? '#f7ecd6' : '#efe6d4', COL.ink, 1);
   text('♪ 音乐 ' + (Music.enabled ? '开' : '关'), musicBtn.x + musicBtn.w / 2, musicBtn.y + 3, 8, COL.ink, 'center', true);
   text('WASD 移动 · 自动攻击 · P 暂停 · M 音乐', VW / 2, 344, 9, COL.inkSoft, 'center');
-  text('prototype P1.6', VW - 10, VH - 14, 8, COL.inkSoft, 'right');
+  text('prototype P2.0', VW - 10, VH - 14, 8, COL.inkSoft, 'right');
 }
 
 function drawMenuPortrait(now) {
+  const nowMs = now * 1000;
+  const look = menuLookTarget(nowMs);
   roughCircle(ctx, 46, 48, 16, COL.gold, COL.ink, 1.8, 10);
   for (let i = 0; i < 8; i++) {
     const a = i * TAU / 8 + 0.2;
@@ -4401,16 +5698,16 @@ function drawMenuPortrait(now) {
   text('PAPER SURVIVORS · 竖屏生存', VW / 2, 122, 9, COL.inkSoft, 'center');
 
   const bob = Math.sin(now * 2) * 3;
-  drawMenuSlime(112, 205 + bob);
-  drawMenuSlime(168, 211 + Math.sin(now * 2 + 1) * 3);
-  drawMenuPlayer(250, 205 + Math.sin(now * 2 + 2) * 3);
+  drawMenuSlime(112, 205 + bob, look.x, look.y, menuReactionStrength(nowMs, 112, 205));
+  drawMenuSlime(168, 211 + Math.sin(now * 2 + 1) * 3, look.x, look.y, menuReactionStrength(nowMs, 168, 211));
+  drawMenuPlayer(250, 205 + Math.sin(now * 2 + 2) * 3, look.x, look.y, menuReactionStrength(nowMs, 250, 205));
+  drawMenuClickFx(nowMs);
 
   roughBox(ctx, nameBtn.x, nameBtn.y, nameBtn.w, nameBtn.h, '#fffdf8', COL.ink, 1.2);
   text('昵称 · ' + playerName, VW / 2, nameBtn.y + 5, 10, COL.ink, 'center', true);
   roughLine(ctx, nameBtn.x + nameBtn.w - 18, nameBtn.y + 6, nameBtn.x + nameBtn.w - 10, nameBtn.y + 14, COL.goldDark, 1.5);
 
-  roughBox(ctx, startBtn.x, startBtn.y, startBtn.w, startBtn.h, '#f5c542', COL.ink, 2.2);
-  text('开始一局', VW / 2, startBtn.y + 13, 19, COL.ink, 'center', true);
+  drawStartButtons();
 
   text('难度', VW / 2, 338, 9, COL.inkSoft, 'center');
   for (let i = 0; i < 3; i++) {
@@ -4428,22 +5725,156 @@ function drawMenuPortrait(now) {
   roughBox(ctx, musicBtn.x, musicBtn.y, musicBtn.w, musicBtn.h, Music.enabled ? '#f7ecd6' : '#efe6d4', COL.ink, 1);
   text('♪ 音乐 ' + (Music.enabled ? '开' : '关'), musicBtn.x + musicBtn.w / 2, musicBtn.y + 3, 8, COL.ink, 'center', true);
   text('左侧拖动移动 · 自动攻击 · 右上暂停', VW / 2, VH - 22, 8, COL.inkSoft, 'center');
-  text('P1.7 竖屏版', VW - 10, VH - 40, 7, COL.inkSoft, 'right');
+  text('P2.0 竖屏版', VW - 10, VH - 40, 7, COL.inkSoft, 'right');
 }
 
-function drawMenuSlime(x, y) {
-  fillPoly(ctx, [[x, y - 17], [x + 11, y - 5], [x + 14, y + 8], [x + 6, y + 14], [x - 6, y + 14], [x - 14, y + 8], [x - 11, y - 5]], COL.inkPurpleMid);
-  strokePoly(ctx, [[x, y - 17], [x + 11, y - 5], [x + 14, y + 8], [x + 6, y + 14], [x - 6, y + 14], [x - 14, y + 8], [x - 11, y - 5]], COL.ink, 2);
-  roughEllipse(ctx, x - 4, y - 10, 4, 2, 'rgba(255,255,255,0.18)', null, 0, 8);
-  roughCircle(ctx, x - 5, y - 3, 4, COL.white, COL.ink, 1.2, 7);
-  roughCircle(ctx, x + 5, y - 3, 4, COL.white, COL.ink, 1.2, 7);
+function drawMenuSeasonAccessory(kind) {
+  const season = currentMenuSeason().id;
+  const hero = kind === 'hero';
+  if (season === 'spring') {
+    const y = hero ? -9 : -14;
+    roughLine(ctx, -9, y + 2, 9, y + 1, '#588444', 1.5);
+    for (let i = -1; i <= 1; i++) {
+      const x = i * 7;
+      roughCircle(ctx, x, y, 3, i === 0 ? '#f3b3c4' : '#fff5ee', COL.ink, 0.55, 6);
+      roughCircle(ctx, x, y, 0.9, COL.gold, null, 0, 5);
+      roughEllipse(ctx, x + 3, y + 2, 2.4, 1.2, '#79a759', null, 0, 6);
+    }
+  } else if (season === 'summer') {
+    const y = hero ? -1 : -4;
+    roughBox(ctx, -10, y - 3, 8, 6, '#2f3742', COL.ink, 1);
+    roughBox(ctx, 2, y - 3, 8, 6, '#2f3742', COL.ink, 1);
+    roughLine(ctx, -2, y, 2, y, COL.ink, 1.2);
+    roughLine(ctx, -8, y - 1, -4, y - 2, '#86bad2', 0.8);
+    roughLine(ctx, 4, y - 1, 8, y - 2, '#86bad2', 0.8);
+    if (hero) {
+      fillPoly(ctx, [[-9, 7], [0, 11], [9, 7], [7, 13], [0, 10], [-7, 13]], '#4c9fbd');
+      roughLine(ctx, -8, 8, 8, 8, COL.ink, 1);
+    } else {
+      roughBox(ctx, -12, -15, 24, 3.5, '#dfb45c', COL.ink, 0.8);
+      roughEllipse(ctx, 0, -18, 8, 4, '#edcc79', COL.ink, 0.8, 8);
+    }
+  } else if (season === 'autumn') {
+    roughBox(ctx, -11, 6, 22, 5, '#a94336', COL.ink, 1);
+    fillPoly(ctx, [[5, 9], [10, 19], [4, 17], [1, 10]], '#bd4e3e');
+    fillPoly(ctx, [[-7, 8], [-1, 2], [2, 7], [7, 3], [6, 10], [0, 12]], '#e18a34');
+    roughLine(ctx, 0, 7, 1, 13, '#7f4b32', 0.7);
+    if (!hero) {
+      roughEllipse(ctx, 0, -14, 8, 4, '#9b653b', COL.ink, 0.9, 8);
+      roughBox(ctx, -2, -19, 4, 5, '#765033', COL.ink, 0.7);
+    }
+  } else if (season === 'winter') {
+    roughBox(ctx, -11, 6, 22, 6, hero ? '#f0e8d8' : '#8a68a0', COL.ink, 1);
+    fillPoly(ctx, [[5, 10], [10, 20], [4, 18], [1, 11]], hero ? '#f5efe3' : '#9a78af');
+    const capY = hero ? -12 : -15;
+    fillPoly(ctx, [[-9, capY], [0, capY - 11], [9, capY], [7, capY + 4], [-7, capY + 4]], hero ? '#c94f42' : '#7d5e93');
+    roughBox(ctx, -10, capY, 20, 4, '#fff7e8', COL.ink, 0.9);
+    roughCircle(ctx, 0, capY - 11, 3.5, '#fff7e8', COL.ink, 0.7, 7);
+    if (!hero) {
+      roughCircle(ctx, -12, -3, 3.5, '#fff7e8', COL.ink, 0.7, 7);
+      roughCircle(ctx, 12, -3, 3.5, '#fff7e8', COL.ink, 0.7, 7);
+    }
+  }
+}
+
+function drawMenuMapAccessory(kind) {
+  const id = MENU_SCENE_ID;
+  if (!id || !MAPS.some((map) => map.id === id)) return;
+  const hero = kind === 'hero';
+  if (id === 'forest') {
+    roughLine(ctx, -10, -13, 10, -14, '#55783c', 1.5);
+    for (let i = -1; i <= 1; i++) {
+      roughEllipse(ctx, i * 7, -15 - Math.abs(i), 4, 2.2, i % 2 ? '#91ad58' : '#6f9145', COL.ink, 0.55, 7);
+    }
+    roughCircle(ctx, 0, -17, 2.5, '#f1c95b', COL.ink, 0.55, 6);
+  } else if (id === 'waste') {
+    roughBox(ctx, -10, -7, 8, 5, '#8e6a4a', COL.ink, 0.9);
+    roughBox(ctx, 2, -7, 8, 5, '#8e6a4a', COL.ink, 0.9);
+    roughLine(ctx, -2, -5, 2, -5, COL.ink, 1);
+    roughBox(ctx, -11, 6, 22, 5, '#b36f45', COL.ink, 0.8);
+    fillPoly(ctx, [[5, 9], [11, 17], [4, 16], [1, 10]], '#c78453');
+  } else if (id === 'desert') {
+    roughBox(ctx, -13, -15, 26, 3, '#d7aa54', COL.ink, 0.8);
+    roughEllipse(ctx, 0, -19, 9, 5, '#e8c578', COL.ink, 0.9, 8);
+    roughBox(ctx, -11, 6, 22, 5, '#5d91a3', COL.ink, 0.8);
+    fillPoly(ctx, [[6, 9], [11, 18], [4, 16], [1, 10]], '#72a7b5');
+  } else if (id === 'swamp') {
+    roughEllipse(ctx, 0, -15, 12, 5, '#6f9c65', '#3f6241', 1, 9);
+    roughLine(ctx, 0, -15, 8, -20, '#496b45', 1.1);
+    roughCircle(ctx, 7, -20, 2.7, '#d590ad', COL.ink, 0.55, 6);
+    if (hero) roughBox(ctx, -10, 7, 20, 4, '#7ea48d', COL.ink, 0.8);
+  } else if (id === 'ocean') {
+    fillPoly(ctx, [[-9, -13], [0, -20], [9, -13], [7, -9], [-7, -9]], '#f6f1de');
+    roughBox(ctx, -10, -13, 20, 3, '#5e9eae', COL.ink, 0.8);
+    roughLine(ctx, -6, 8, 0, 12, '#d96c65', 1.8);
+    roughLine(ctx, 0, 12, 6, 8, '#d96c65', 1.8);
+    roughCircle(ctx, 0, 12, 1.8, '#f2d39b', COL.ink, 0.5, 6);
+  } else if (id === 'volcano') {
+    roughBox(ctx, -10, -7, 8, 5, '#d96b39', COL.ink, 0.9);
+    roughBox(ctx, 2, -7, 8, 5, '#d96b39', COL.ink, 0.9);
+    roughLine(ctx, -2, -5, 2, -5, '#f0a43c', 1);
+    roughLine(ctx, -11, -12, 11, -13, '#e26432', 2.2);
+    fillPoly(ctx, [[7, -12], [12, -8], [8, -5]], '#f3a33c');
+  } else if (id === 'inferno') {
+    roughBox(ctx, -11, 6, 22, 5, '#8f3b68', COL.ink, 0.9);
+    fillPoly(ctx, [[5, 9], [11, 19], [4, 17], [1, 10]], '#b64b77');
+    roughCircle(ctx, 0, 11, 3.1, '#dc6a91', COL.ink, 0.7, 7);
+    doodleStar(ctx, 0, 11, 2, '#fff0c4', 0.7);
+    roughLine(ctx, -8, -14, -3, -18, '#743052', 2);
+    roughLine(ctx, 8, -14, 3, -18, '#743052', 2);
+  } else if (id === 'heaven') {
+    roughEllipse(ctx, 0, -19, 11, 3.4, null, '#c99d37', 1.5, 10);
+    roughCircle(ctx, -6, 9, 4, '#f9fbf6', '#8da7bc', 0.6, 7);
+    roughCircle(ctx, 0, 7, 5, '#fffdf5', '#8da7bc', 0.6, 7);
+    roughCircle(ctx, 6, 9, 4, '#f9fbf6', '#8da7bc', 0.6, 7);
+  } else if (id === 'four') {
+    const cols = ['#6f8d3b', '#d5a13a', '#d75a45', '#7189a6'];
+    for (let i = 0; i < 4; i++) roughBox(ctx, -10 + i * 5, 7, 5, 5, cols[i], COL.ink, 0.45);
+    fillPoly(ctx, [[6, 10], [11, 19], [5, 17], [1, 11]], cols[(Math.floor(performance.now() / 900) + (hero ? 1 : 0)) % 4]);
+  } else if (id === 'snow') {
+    fillPoly(ctx, [[-10, -14], [0, -25], [10, -14], [8, -9], [-8, -9]], hero ? '#6ba6bd' : '#7b93ad');
+    roughBox(ctx, -11, -14, 22, 4, '#f5fbfd', COL.ink, 0.8);
+    roughCircle(ctx, 0, -25, 3.5, '#f5fbfd', COL.ink, 0.6, 7);
+    roughBox(ctx, -11, 6, 22, 6, '#78b9cd', COL.ink, 0.9);
+    fillPoly(ctx, [[5, 10], [11, 20], [4, 18], [1, 11]], '#94d0df');
+  } else if (id === 'crimson') {
+    roughBox(ctx, -11, 6, 22, 6, '#81283e', COL.ink, 0.9);
+    fillPoly(ctx, [[5, 10], [12, 20], [4, 17], [1, 11]], '#b63a52');
+    for (let i = -1; i <= 1; i++) fillPoly(ctx, [[i * 7 - 3, -14], [i * 7, -23 - (i === 0 ? 4 : 0)], [i * 7 + 3, -14]], i === 0 ? '#d84c63' : '#7c263c');
+    roughCircle(ctx, 0, 10, 3.2, null, '#f06d7e', 0.9, 7);
+  }
+}
+
+function drawMenuSlime(x, y, lookX, lookY, reaction) {
+  const a = Math.atan2(lookY - y, lookX - x);
+  const eyeX = Math.cos(a) * 1.65;
+  const eyeY = Math.sin(a) * 1.25;
+  const bounce = (reaction || 0) * 5;
+  ctx.save();
+  ctx.translate(x, y - bounce);
+  ctx.scale(1 + (reaction || 0) * 0.1, 1 - (reaction || 0) * 0.08);
+  fillPoly(ctx, [[0, -17], [11, -5], [14, 8], [6, 14], [-6, 14], [-14, 8], [-11, -5]], COL.inkPurpleMid);
+  strokePoly(ctx, [[0, -17], [11, -5], [14, 8], [6, 14], [-6, 14], [-14, 8], [-11, -5]], COL.ink, 2);
+  roughEllipse(ctx, -4, -10, 4, 2, 'rgba(255,255,255,0.18)', null, 0, 8);
+  roughCircle(ctx, -5, -3, 4, COL.white, COL.ink, 1.2, 7);
+  roughCircle(ctx, 5, -3, 4, COL.white, COL.ink, 1.2, 7);
   ctx.fillStyle = COL.ink;
-  ctx.beginPath(); ctx.arc(x - 4.6, y - 2.6, 1.6, 0, TAU); ctx.fill();
-  ctx.beginPath(); ctx.arc(x + 5.4, y - 2.6, 1.6, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(-5 + eyeX, -3 + eyeY, 1.55, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.arc(5 + eyeX, -3 + eyeY, 1.55, 0, TAU); ctx.fill();
+  drawMenuMapAccessory('slime');
+  ctx.restore();
 }
 
-function drawMenuPlayer(x, y) {
-  drawPencilHeroArt(x, y, 1.15, -0.25, 1);
+function drawMenuPlayer(x, y, lookX, lookY, reaction) {
+  const aim = Math.atan2(lookY - y, lookX - x);
+  const yy = y - (reaction || 0) * 6;
+  const size = 1.15 + (reaction || 0) * 0.05;
+  drawPencilHeroArt(x, yy, size, aim, 1);
+  ctx.save();
+  ctx.translate(x, yy);
+  ctx.scale(size, size);
+  drawMenuMapAccessory('hero');
+  ctx.restore();
 }
 
 // =============================================================
@@ -4487,6 +5918,10 @@ if (AUTO_START) {
     }
   }
   if (FORCE_BOSS_PREVIEW) spawnBoss();
+  if (FORCE_STORY_PREVIEW !== null) {
+    const storyIndex = clamp(Number(FORCE_STORY_PREVIEW) || 0, -1, CHAPTER_STORIES.length - 1);
+    showStoryChapter(storyIndex);
+  }
 }
 requestAnimationFrame(frame);
 
@@ -4512,6 +5947,8 @@ window.__ps = {
   get fourPhase() { return fourPhase; },
   jumpLevel(n) { levelIdx = n - 1; startLevel(); },
   next: nextLevel,
+  showStory(n) { showStoryChapter(clamp(Number(n) || 0, -1, CHAPTER_STORIES.length - 1)); },
+  get storyChapter() { return storyChapter; },
   setEnch(id, lv) { setEnchantment(id, lv); },
   get weapons() { return weapons; },
   forceWin() { state = 'win'; },
@@ -4523,5 +5960,7 @@ window.__ps = {
   setNickname(value) { playerName = cleanNickname(value); saveLocal(NICKNAME_KEY, playerName); },
   get musicEnabled() { return Music.enabled; },
   toggleMusic() { Music.toggle(); },
+  get season() { return currentMenuSeason().id; },
+  setSeason(id) { if (MENU_SEASONS.some((season) => season.id === id)) rerollMenuSeason(id); },
 };
 })();

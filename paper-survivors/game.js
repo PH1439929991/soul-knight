@@ -5724,7 +5724,7 @@ function drawMenu() {
 
   text('纸 片 幸 存 者', VW / 2, 62, 40, COL.ink, 'center', true, -0.02);
   roughLine(ctx, VW / 2 - 150, 116, VW / 2 + 150, 114, COL.ink, 2);
-  text(currentMenuQuote(now), VW / 2, 126, 10, COL.inkSoft, 'center');
+  text(currentMenuQuote(now), VW / 2, 126, 10, COL.ink, 'center', true);
 
   roughBox(ctx, nameBtn.x, nameBtn.y, nameBtn.w, nameBtn.h, '#fffdf8', COL.ink, 1.2);
   text('昵称 · ' + playerName, VW / 2, nameBtn.y + 3, 9, COL.ink, 'center', true);
@@ -5766,7 +5766,7 @@ function drawMenuPortrait(now) {
   doodleStar(ctx, VW - 40, 76, 5, COL.red, 1.3);
   text('纸 片 幸 存 者', VW / 2, 72, 30, COL.ink, 'center', true, -0.02);
   roughLine(ctx, 48, 112, VW - 48, 112, COL.ink, 2);
-  text(currentMenuQuote(now), VW / 2, 122, 9, COL.inkSoft, 'center');
+  text(currentMenuQuote(now), VW / 2, 122, 9, COL.ink, 'center', true);
 
   const bob = Math.sin(now * 2) * 3;
   drawMenuSlime(112, 205 + bob, look.x, look.y, menuReactionStrength(nowMs, 112, 205));
